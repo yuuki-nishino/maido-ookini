@@ -212,6 +212,8 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
           <span class={styles.chimeSub}>タップしてください（音量を上げておいてください）</span>
         </button>
       ) : null}
+      {/* 画面を離れると、音は鳴らない（iPhone。screens.md §4.2）。音で知らせてもらえると思って、離れないように（#62） */}
+      {order.status === 'preparing' && <p class={styles.leaveNote}>⚠ ほかのアプリやホーム画面に移ると、音は鳴りません。ときどき、この画面を見てください</p>}
 
       <section class={styles.detail} aria-label="ご注文の内容">
         <ul class={styles.items}>

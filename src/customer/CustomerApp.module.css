@@ -128,6 +128,14 @@
   font-weight: 400;
 }
 
+.leaveNote {
+  margin: 0;
+  color: var(--color-ink-sub);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
+  text-align: center;
+}
+
 .chimeOn {
   margin: 0;
   text-align: center;
