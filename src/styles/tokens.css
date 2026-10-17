@@ -13,7 +13,8 @@
   --color-brand-press: #8a2f1d;
   --color-on-brand: #fff8ef;
   --color-nature: #5e6b3a; /* 苔：タブ・飾りの線 */
-  --color-bell: #f6c343; /* ベルのアイコンの塗り（輪郭は文字の色）。弁柄の上でも、生成りの上でも目立つ黄色 */
+  --color-bell: #f6c343; /* ベルのアイコンの塗り。弁柄（ボタン）の上で目立つ黄色（コントラスト 3.9） */
+  --color-bell-deep: #b37a00; /* 生成りの上のベル（明るい黄色は、生成りに溶けるため。コントラスト 3.2） */
   --color-nature-bg: #e7e9d6;
   --color-focus: #1f5fbf; /* フォーカスの輪（どの地でも見える青） */
 

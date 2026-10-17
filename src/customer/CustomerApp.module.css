@@ -157,6 +157,7 @@
   text-align: center;
   font-weight: 700;
   color: var(--color-ink-sub);
+  --color-bell: var(--color-bell-deep); /* 生成りの上なので、濃い山吹色のベル */
 }
 
 .debug {
