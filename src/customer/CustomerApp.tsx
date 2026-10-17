@@ -209,7 +209,7 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
       ) : chime ? (
         <button type="button" class={styles.chimeButton} onClick={onArm}>
           🔔 {chime === 'arm' ? 'できあがりを音で知らせる' : '音をオンにし直す'}
-          <span class={styles.chimeSub}>タップしてください</span>
+          <span class={styles.chimeSub}>タップしてください（音量を上げておいてください）</span>
         </button>
       ) : null}
 
