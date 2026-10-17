@@ -147,9 +147,9 @@
 
 .leaveNoteText {
   margin: 0;
-  font-size: var(--fs-md);
-  font-weight: 700;
+  font-size: var(--fs-sm); /* 見出しを主に。説明は控えめに（実機の確認） */
   line-height: var(--lh-tight);
+  color: var(--color-ink-sub);
 }
 
 .chimeOn {

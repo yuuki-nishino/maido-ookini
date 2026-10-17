@@ -221,7 +221,7 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
           <p class={styles.leaveNoteTitle}>
             <IconLabel icon="alert">音でお知らせできるのは、この画面を開いているときだけです</IconLabel>
           </p>
-          <p class={styles.leaveNoteText}>ほかのアプリを見るときは、ときどきこの画面に戻ってきてください。戻ったときにできあがっていれば、音でお知らせします</p>
+          <p class={styles.leaveNoteText}>ときどきこの画面に戻ってきてください。できあがっていれば、そのときお知らせします</p>
         </div>
       )}
 
