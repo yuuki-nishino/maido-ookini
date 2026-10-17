@@ -2,6 +2,7 @@
 // Auth・Service Worker・永続キャッシュを使わない（DESIGN.md §4）。ホーム画面への追加は求めない
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { IconLabel } from '../components/Icon';
 import { Noren } from '../components/Noren';
 import { watchOrder } from '../lib/data/customerOrder';
 import {
@@ -16,6 +17,7 @@ import {
   shouldAlert,
   shouldKeepAwake,
   shouldRecall,
+  showLeaveNote,
   showRecallNotice,
   type AlertPoint,
   startWaitTicker,
@@ -197,21 +199,32 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
         {/* お店の「もう一度呼ぶ」（#58）。音を鳴らせないお客様にも、文字で分かるように */}
         {recallNotice && (
           <p class={styles.recall} role="alert">
-            📣 お店からお呼びしています
+            <IconLabel icon="megaphone">お店からお呼びしています</IconLabel>
           </p>
         )}
       </section>
 
       {chime === 'armed' ? (
         <p class={styles.chimeOn} role="status">
-          🔔 できあがりを、音でお知らせします
+          <IconLabel icon="bell">できあがりを、音でお知らせします</IconLabel>
         </p>
       ) : chime ? (
         <button type="button" class={styles.chimeButton} onClick={onArm}>
-          🔔 {chime === 'arm' ? 'できあがりを音で知らせる' : '音をオンにし直す'}
+          <IconLabel icon="bell">{chime === 'arm' ? 'できあがりを音で知らせる' : '音をオンにし直す'}</IconLabel>
           <span class={styles.chimeSub}>タップしてください（音量を上げておいてください）</span>
         </button>
       ) : null}
+
+      {/* 画面を離れると、音は鳴らない（iPhone。screens.md §4.2）。音で知らせてもらえると思って、気づけないことがないように（#62）。
+          読みそびれないよう、囲みにする。音のボタンの下（ボタン → 注意事項、の順に読む） */}
+      {showLeaveNote(order.status) && (
+        <div class={styles.leaveNote}>
+          <p class={styles.leaveNoteTitle}>
+            <IconLabel icon="alert">音でお知らせできるのは、この画面を開いているときだけです</IconLabel>
+          </p>
+          <p class={styles.leaveNoteText}>ときどきこの画面に戻ってきてください。できあがっていれば、そのときお知らせします</p>
+        </div>
+      )}
 
       <section class={styles.detail} aria-label="ご注文の内容">
         <ul class={styles.items}>

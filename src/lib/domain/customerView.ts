@@ -102,6 +102,11 @@ export function chimeButton(status: CustomerStatus, armed: boolean, audioRunning
   return status === 'ready' && armed && !audioRunning && pending ? 'retry' : null;
 }
 
+/** 「画面を開いているときだけ鳴る」の囲みを出すか（#62）。調理中だけ（できあがり以降は、もう待つ必要が無い） */
+export function showLeaveNote(status: CustomerStatus): boolean {
+  return status === 'preparing';
+}
+
 /** 画面を消えないようにしておくか（Screen Wake Lock）。タップのあと、調理中・できあがりの間だけ（お渡し済み・取り消しでは、電池のため、外す） */
 export function shouldKeepAwake(status: CustomerStatus | null, armed: boolean): boolean {
   return armed && (status === 'preparing' || status === 'ready');
@@ -109,7 +114,7 @@ export function shouldKeepAwake(status: CustomerStatus | null, armed: boolean): 
 
 /** 状況ごとの、バッジと案内文（SPEC 6.7） */
 export const CUSTOMER_STATUS_TEXT: Record<CustomerStatus, { badge: string; message: string }> = {
-  preparing: { badge: '調理中', message: 'ただいま調理中です。できあがるまで、この画面を開いたままお待ちください' },
+  preparing: { badge: '調理中', message: 'ただいま調理中です。できあがったら、この画面でお知らせします' },
   ready: { badge: 'へい、お待ち！', message: '受け渡し口までお越しください' },
   done: { badge: 'お渡し済み', message: '毎度おおきに！' },
   cancelled: { badge: '取り消し', message: 'この注文は取り消されました。お近くのスタッフへお声がけください' },

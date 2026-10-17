@@ -128,11 +128,36 @@
   font-weight: 400;
 }
 
+.leaveNote {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+  border: 3px solid var(--status-cooking-fg);
+  border-radius: var(--radius-sm); /* ボタン（角の丸い）と見分けるため、角を小さく */
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.leaveNoteTitle {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: var(--lh-tight);
+}
+
+.leaveNoteText {
+  margin: 0;
+  font-size: var(--fs-sm); /* 見出しを主に。説明は控えめに（実機の確認） */
+  line-height: var(--lh-tight);
+  color: var(--color-ink-sub);
+}
+
 .chimeOn {
   margin: 0;
   text-align: center;
   font-weight: 700;
   color: var(--color-ink-sub);
+  --color-bell: var(--color-bell-deep); /* 生成りの上なので、濃い山吹色のベル */
 }
 
 .debug {

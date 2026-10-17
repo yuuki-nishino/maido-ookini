@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   chimeButton,
   shouldRecall,
+  showLeaveNote,
   showRecallNotice,
   nextPendingAlert,
   CUSTOMER_STATUS_TEXT,
@@ -141,6 +142,17 @@ describe('nextPendingAlert（まだ鳴らせていない知らせ。#57・#58）
   });
 });
 
+describe('showLeaveNote（画面を開いているときだけ鳴る、の囲み。#62）', () => {
+  it('調理中だけ出す', () => {
+    expect(showLeaveNote('preparing')).toBe(true);
+  });
+  it('できあがり・お渡し済み・取り消しでは、出さない（もう待つ必要が無い）', () => {
+    expect(showLeaveNote('ready')).toBe(false);
+    expect(showLeaveNote('done')).toBe(false);
+    expect(showLeaveNote('cancelled')).toBe(false);
+  });
+});
+
 describe('showRecallNotice（「お店からお呼びしています」。#58）', () => {
   it('呼ばれていて（30秒は、呼んだ側のタイマーが消す）、できあがりのままなら出す', () => {
     expect(showRecallNotice(1000, 'ready')).toBe(true);
@@ -169,7 +181,7 @@ describe('shouldKeepAwake（画面を消えなくするか。#57）', () => {
 
 describe('CUSTOMER_STATUS_TEXT（SPEC 6.7）', () => {
   it('バッジと案内文', () => {
-    expect(CUSTOMER_STATUS_TEXT.preparing).toEqual({ badge: '調理中', message: 'ただいま調理中です。できあがるまで、この画面を開いたままお待ちください' });
+    expect(CUSTOMER_STATUS_TEXT.preparing).toEqual({ badge: '調理中', message: 'ただいま調理中です。できあがったら、この画面でお知らせします' });
     expect(CUSTOMER_STATUS_TEXT.ready).toEqual({ badge: 'へい、お待ち！', message: '受け渡し口までお越しください' });
     expect(CUSTOMER_STATUS_TEXT.done).toEqual({ badge: 'お渡し済み', message: '毎度おおきに！' });
     expect(CUSTOMER_STATUS_TEXT.cancelled.badge).toBe('取り消し');

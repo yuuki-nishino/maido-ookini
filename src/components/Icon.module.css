@@ -1,0 +1,40 @@
+/* 文字と並べる線のアイコン。文字の大きさ・色に合わせる */
+.icon {
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.2em;
+}
+
+/* アイコン＋文字（IconLabel）。文字が2行以上になっても、アイコンは1行目にそろえる */
+.label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.35em;
+  text-align: left;
+}
+
+.label > .icon {
+  margin-top: 0.2em; /* 文字の見た目の中心にそろえる（行の高さとの差の半分より、下。実機の確認） */
+  vertical-align: 0;
+}
+
+/* 形ごとに、見た目の重心が違うため、高さを少しずつ直す（実機の確認） */
+.label > .bell {
+  margin-top: 0.26em; /* 下が重い形（玉）のため、少し下げる */
+}
+
+.label > .alert {
+  margin-top: 0.12em; /* 三角は下が広く、低く見えるため、少し上げる */
+}
+
+/* 塗りつぶす形（ベル）。輪郭も中も黄色 */
+.filled {
+  fill: var(--color-bell);
+  stroke: var(--color-bell);
+}
