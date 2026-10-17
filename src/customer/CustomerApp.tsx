@@ -2,6 +2,7 @@
 // Auth・Service Worker・永続キャッシュを使わない（DESIGN.md §4）。ホーム画面への追加は求めない
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { IconLabel } from '../components/Icon';
 import { Noren } from '../components/Noren';
 import { watchOrder } from '../lib/data/customerOrder';
 import {
@@ -197,18 +198,18 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
         {/* お店の「もう一度呼ぶ」（#58）。音を鳴らせないお客様にも、文字で分かるように */}
         {recallNotice && (
           <p class={styles.recall} role="alert">
-            📣 お店からお呼びしています
+            <IconLabel icon="megaphone">お店からお呼びしています</IconLabel>
           </p>
         )}
       </section>
 
       {chime === 'armed' ? (
         <p class={styles.chimeOn} role="status">
-          🔔 できあがりを、音でお知らせします
+          <IconLabel icon="bell">できあがりを、音でお知らせします</IconLabel>
         </p>
       ) : chime ? (
         <button type="button" class={styles.chimeButton} onClick={onArm}>
-          🔔 {chime === 'arm' ? 'できあがりを音で知らせる' : '音をオンにし直す'}
+          <IconLabel icon="bell">{chime === 'arm' ? 'できあがりを音で知らせる' : '音をオンにし直す'}</IconLabel>
           <span class={styles.chimeSub}>タップしてください（音量を上げておいてください）</span>
         </button>
       ) : null}
@@ -217,7 +218,9 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
           読みそびれないよう、囲みにする。音のボタンの下（ボタン → 注意事項、の順に読む） */}
       {order.status === 'preparing' && (
         <div class={styles.leaveNote}>
-          <p class={styles.leaveNoteTitle}>🔔 音でお知らせできるのは、この画面を開いているときだけです</p>
+          <p class={styles.leaveNoteTitle}>
+            <IconLabel icon="alert">音でお知らせできるのは、この画面を開いているときだけです</IconLabel>
+          </p>
           <p class={styles.leaveNoteText}>ほかのアプリを見るときは、ときどきこの画面に戻ってきてください。戻ったときにできあがっていれば、音でお知らせします</p>
         </div>
       )}

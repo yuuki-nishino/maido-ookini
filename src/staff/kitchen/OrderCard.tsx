@@ -1,6 +1,7 @@
 // 調理画面の注文のカード（screens.md §3.5）。番号（大）・品目・支払い方法・合計・経過分数、状態ごとの操作
 import { useEffect, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
+import { IconLabel } from '../../components/Icon';
 import { PaymentBadge, StatusBadge } from '../../components/Badge';
 import type { Order } from '../../lib/data/types';
 import { ACTION_LABEL, availableActions, dayMark, elapsedMinutes, type OrderAction } from '../../lib/domain/orderStatus';
@@ -123,7 +124,7 @@ function RecallButton({ order, held, onRecall }: { order: Order; held: boolean; 
   if (state.kind === 'hidden') return null;
 
   const label =
-    state.kind === 'wait' ? `🔔 呼びました（あと${state.seconds}秒）` : state.kind === 'held' ? '🔔 もう一度呼ぶ（完成の送信待ち）' : state.kind === 'offline' ? '🔔 もう一度呼ぶ（通信が必要）' : '🔔 もう一度呼ぶ';
+    state.kind === 'wait' ? `呼びました（あと${state.seconds}秒）` : state.kind === 'held' ? 'もう一度呼ぶ（完成の送信待ち）' : state.kind === 'offline' ? 'もう一度呼ぶ（通信が必要）' : 'もう一度呼ぶ';
   return (
     <div class={styles.recall}>
       <Button
@@ -137,7 +138,7 @@ function RecallButton({ order, held, onRecall }: { order: Order; held: boolean; 
           onRecall(order);
         }}
       >
-        {label}
+        <IconLabel icon="megaphone">{label}</IconLabel>
       </Button>
       {order.calls > 0 && <span class={styles.recallCount}>呼んだ：{order.calls}回</span>}
     </div>
