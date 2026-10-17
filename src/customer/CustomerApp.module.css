@@ -133,7 +133,7 @@
   gap: var(--sp-1);
   padding: var(--sp-3) var(--sp-4);
   border: 3px solid var(--status-cooking-fg);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm); /* ボタン（角の丸い）と見分けるため、角を小さく */
   background: var(--color-surface);
   color: var(--color-ink);
 }
