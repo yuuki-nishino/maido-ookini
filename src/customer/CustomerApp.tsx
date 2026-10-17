@@ -20,7 +20,7 @@ import {
   type CustomerSnapshot,
   type CustomerStatus,
 } from '../lib/domain/customerView';
-import { chimeDebug, chimeLog, isChimeRunning, isVoiceReady, log, playChime, setKeepAwake, syncAwake, unlockChime } from './chime';
+import { chimeDebug, chimeLog, getVoiceVersion, isChimeRunning, log, playChime, setKeepAwake, syncAwake, unlockChime } from './chime';
 import styles from './CustomerApp.module.css';
 
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
@@ -33,12 +33,12 @@ export function CustomerApp() {
   const [waitedMs, setWaitedMs] = useState(0);
   const [startedAt] = useState(Date.now); // 開いた時刻（読み込みの待ちの起点）
   const [lastOrder, setLastOrder] = useState<CustomerOrder | null>(null);
-  // 音のお知らせ（#57）：armed ＝ このページで、ボタンをタップした。audioRunning ＝ いま音を鳴らせる。voiceReady ＝ 声を読み込めた
+  // 音のお知らせ（#57）：armed ＝ このページで、ボタンをタップした。audioRunning ＝ 鳴らせる（直近の再生が拒否されていない）。voiceVersion ＝ 声の読み込みの版
   const [armed, setArmed] = useState(false);
   const armedRef = useRef(false); // 購読のコールバックから読むため
   const [audioRunning, setAudioRunning] = useState(false);
-  const [voiceReady, setVoiceReady] = useState(false);
-  // まだ鳴らせていない、できあがりの知らせ（声の読み込み待ち・裏に回っている間・音の再開待ち）。鳴らせたら消す
+  const [voiceVersion, setVoiceVersion] = useState(0);
+  // まだ鳴らせていない、できあがりの知らせ（声の読み込み待ち・裏に回っている間・拒否からの、タップのし直し待ち）。鳴らせたら消す
   const [pending, setPending] = useState(false);
   const [visible, setVisible] = useState(document.visibilityState === 'visible');
   const [, setLogTick] = useState(0); // ?debug の記録を、描き直すため
@@ -51,8 +51,8 @@ export function CustomerApp() {
       setUpdatedAt(new Date());
       if (s.kind === 'doc' && s.order) {
         const next = s.order.status;
-        // 「できあがり」に変わった瞬間だけ知らせる。声は、下の effect が鳴らす（タップのあとだけ）
-        if (shouldAlert(prev, next) && !armedRef.current) navigator.vibrate?.([200, 100, 200]); // 対応する端末のみ（iPhone は非対応）
+        // 「できあがり」に変わった瞬間だけ知らせる：振動は、その場で（対応する端末のみ。iPhone は非対応）。声は、下の effect が鳴らす（タップのあとだけ）
+        if (shouldAlert(prev, next)) navigator.vibrate?.([200, 100, 200]);
         const from = prev;
         setPending((p) => nextPendingAlert(p, from, next));
         prev = next;
@@ -79,15 +79,15 @@ export function CustomerApp() {
   // 音の状態が変わったとき（chime.ts から）
   const onChimeChange = () => {
     setAudioRunning(isChimeRunning());
-    setVoiceReady(isVoiceReady());
+    setVoiceVersion(getVoiceVersion());
     setLogTick((n) => n + 1);
   };
 
-  // まだ鳴らせていない知らせがあれば、鳴らす。鳴らせなければ、声の読み込み・音の再開・表示に戻る、のどれかが変わったときに、もう一度
+  // まだ鳴らせていない知らせがあれば、鳴らす。鳴らせなければ、声の読み込み・拒否からの回復（タップ）・表示に戻る、のどれかが変わったときに、もう一度
   useEffect(() => {
     if (!pending || !armed) return;
     void playChime().then((played) => played && setPending(false));
-  }, [pending, armed, audioRunning, voiceReady, visible]);
+  }, [pending, armed, audioRunning, voiceVersion, visible]);
 
   // ホームに戻って、また開いたとき：画面を消えなくするのを取り直す。声は、上の effect が鳴らす（拒否されたら、ボタン「音をオンにし直す」）
   useEffect(() => {
@@ -115,10 +115,9 @@ export function CustomerApp() {
 
   // タブの題名にも、番号と状況を出す（ほかのアプリに切り替えても、分かるように）
   const activeNumber = view?.state === 'active' ? view.order.number : null;
-  const activeStatus = view?.state === 'active' ? view.order.status : null;
   useEffect(() => {
-    document.title = activeNumber !== null && activeStatus ? `${activeNumber}番 ${CUSTOMER_STATUS_TEXT[activeStatus].badge}｜毎度おおきに` : 'ご注文の状況｜毎度おおきに';
-  }, [activeNumber, activeStatus]);
+    document.title = activeNumber !== null && status ? `${activeNumber}番 ${CUSTOMER_STATUS_TEXT[status].badge}｜毎度おおきに` : 'ご注文の状況｜毎度おおきに';
+  }, [activeNumber, status]);
 
   return (
     <>
@@ -145,7 +144,7 @@ export function CustomerApp() {
         ) : null}
         {chimeDebug && (
           <pre class={styles.debug}>
-            {`armed=${armed} running=${audioRunning} voice=${voiceReady} pending=${pending} visible=${visible}\n${chimeLog.join('\n')}`}
+            {`armed=${armed} running=${audioRunning} voice=${voiceVersion} pending=${pending} visible=${visible}\n${chimeLog.join('\n')}`}
           </pre>
         )}
       </main>

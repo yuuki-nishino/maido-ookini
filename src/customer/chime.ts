@@ -13,15 +13,18 @@ const REPLAY_GUARD_MS = 5000;
 
 let el: HTMLAudioElement | null = null;
 let unlocked = false; // タップした（再生の許しを求めた）
-let failed = false; // 直近の再生が、拒否された（タップし直しが必要）
-let voiceReady = false;
+let denied = false; // 直近の再生が、拒否された（NotAllowedError。タップし直しが必要）
+let voiceVersion = 0; // 読み込めた・読み込み直した、たびに増やす（呼んだ側が、鳴らし直すきっかけにする）
 let retryMs = 2000;
-let lastPlayedAt = -Infinity;
+let lastPlayedAt = -Infinity; // 鳴らし始められた時刻
+let playing: Promise<boolean> | null = null; // 鳴らし始める途中の play()
+let playGen = 0; // 本当の再生を始めるたびに増やす（消音の unlock が、あとから声を止めないように）
 let notify: () => void = () => {};
 
 // ?debug のときだけ、画面に記録を出す（実機で、原因を確かめるため）
 export const chimeDebug = new URLSearchParams(location.search).has('debug');
 export const chimeLog: string[] = [];
+/** 記録する（?debug のときだけ）。あわせて、状態が変わったことを、呼んだ側に知らせる */
 export function log(msg: string) {
   if (chimeDebug) {
     const t = new Date().toLocaleTimeString('ja-JP', { hour12: false });
@@ -36,15 +39,19 @@ function audioEl(): HTMLAudioElement {
   const a = new Audio();
   a.preload = 'auto';
   a.addEventListener('canplaythrough', () => {
-    if (voiceReady) return;
-    voiceReady = true;
     retryMs = 2000;
+    voiceVersion++;
     log('voice loaded');
   });
+  // 読み込みの失敗：間隔を倍にして（2秒〜30秒）、読み込み直す。iPhone は、タップの外の load() では、データまで読まないことがあるため、
+  // 読み込み直すたびに知らせ、呼んだ側が play() を試す（play() は、自分で読み込みを待つ）
   a.addEventListener('error', () => {
-    voiceReady = false;
     log(`voice failed: ${a.error?.code ?? '?'}（${retryMs / 1000}秒後に再試行）`);
-    setTimeout(() => a.load(), retryMs);
+    setTimeout(() => {
+      a.load();
+      voiceVersion++;
+      log('voice reload');
+    }, retryMs);
     retryMs = Math.min(retryMs * 2, 30000);
   });
   a.addEventListener('ended', () => log('ended')); // ?debug：最後まで再生されたか
@@ -72,18 +79,20 @@ export function unlockChime(onChange: () => void, playNow = false): void {
     return;
   }
   // 消音で一度再生して、すぐ止める（タップの中で再生すると、以後、タップなしで鳴らせる）
+  const gen = playGen;
   a.muted = true;
   a.play().then(
     () => {
+      denied = false;
+      log('unlock');
+      if (gen !== playGen) return; // 間に、本当の再生が始まった（止めない）
       a.pause();
       a.currentTime = 0;
       a.muted = false;
-      failed = false;
-      log('unlock');
     },
     (e: unknown) => {
-      a.muted = false;
-      failed = true; // ボタン「音をオンにし直す」を出す
+      if (gen === playGen) a.muted = false;
+      if (errName(e) === 'NotAllowedError') denied = true; // ボタン「音をオンにし直す」を出す
       log(`unlock failed: ${errName(e)}`);
     },
   );
@@ -91,42 +100,47 @@ export function unlockChime(onChange: () => void, playNow = false): void {
 
 /** いま鳴らせる状態か（タップのあと、直近の再生が拒否されていない） */
 export function isChimeRunning(): boolean {
-  return unlocked && !failed;
+  return unlocked && !denied;
 }
 
-/** 声を読み込めたか */
-export function isVoiceReady(): boolean {
-  return voiceReady;
+/** 声の読み込みの版（読み込めた・読み込み直したたびに増える） */
+export function getVoiceVersion(): number {
+  return voiceVersion;
 }
 
 /**
- * 声を1回鳴らす（振動も）。鳴らし始めたら true。声がまだ無い・拒否されたときは false（呼んだ側が、あとで、もう一度呼ぶ）。
- * 直前（5秒以内）に鳴らしていれば、重ねずに true
+ * 声を1回鳴らす。鳴らし始められたら true。タップの前・拒否された・読み込めないときは false（呼んだ側が、あとで、もう一度呼ぶ）。
+ * 直前（5秒以内）に鳴らし始めていれば、重ねずに true。鳴らし始める途中なら、その結果を待つ
  */
-export async function playChime(): Promise<boolean> {
-  if (!el || !unlocked || !voiceReady) return false;
+export function playChime(): Promise<boolean> {
+  if (!unlocked) return Promise.resolve(false);
   return startVoice();
 }
 
-async function startVoice(): Promise<boolean> {
+function startVoice(): Promise<boolean> {
+  if (playing) return playing;
+  if (performance.now() - lastPlayedAt < REPLAY_GUARD_MS) return Promise.resolve(true);
   const a = audioEl();
-  const now = performance.now();
-  if (now - lastPlayedAt < REPLAY_GUARD_MS) return true;
-  lastPlayedAt = now;
+  playGen++;
   a.muted = false;
   a.currentTime = 0;
-  try {
-    await a.play();
-  } catch (e) {
-    lastPlayedAt = -Infinity;
-    failed = true;
-    log(`play failed: ${errName(e)}`);
-    return false;
-  }
-  failed = false;
-  navigator.vibrate?.([200, 100, 200]); // 対応する端末のみ（iPhone は非対応）
-  log('play');
-  return true;
+  // play() は、タップの中で呼ぶ（unlockChime の playNow）ために、await の前に呼ぶ
+  playing = a.play().then(
+    () => {
+      playing = null;
+      lastPlayedAt = performance.now();
+      denied = false;
+      log('play');
+      return true;
+    },
+    (e: unknown) => {
+      playing = null;
+      if (errName(e) === 'NotAllowedError') denied = true;
+      log(`play failed: ${errName(e)}`);
+      return false;
+    },
+  );
+  return playing;
 }
 
 const errName = (e: unknown) => (e instanceof Error ? e.name : String(e));
