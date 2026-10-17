@@ -78,7 +78,8 @@ export function unlockChime(onChange: () => void, playNow = false): void {
     void startVoice();
     return;
   }
-  // 消音で一度再生して、すぐ止める（タップの中で再生すると、以後、タップなしで鳴らせる）
+  // 消音で一度再生して、すぐ止める（タップの中で再生すると、以後、タップなしで鳴らせる）。
+  // 消音は、ここでは解かない（本当に鳴らすとき、startVoice で解く）。止めてすぐ解くと、iPhone で、声の頭が一瞬聞こえることがあった（実機の確認）
   const gen = playGen;
   a.muted = true;
   a.play().then(
@@ -88,10 +89,8 @@ export function unlockChime(onChange: () => void, playNow = false): void {
       if (gen !== playGen) return; // 間に、本当の再生が始まった（止めない）
       a.pause();
       a.currentTime = 0;
-      a.muted = false;
     },
     (e: unknown) => {
-      if (gen === playGen) a.muted = false;
       if (errName(e) === 'NotAllowedError') denied = true; // ボタン「音をオンにし直す」を出す
       log(`unlock failed: ${errName(e)}`);
     },
