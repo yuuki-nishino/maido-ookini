@@ -103,6 +103,17 @@ export function parseTendered(input: string): number | null {
   return Number.isSafeInteger(n) && n <= TENDERED_MAX ? n : null;
 }
 
+/**
+ * お預りに、受け取ったお金（amount）を足す（#61。お金のボタン）。入力が不正なとき・上限を超えるときは、足さずに、そのまま返す。
+ * 足した結果は、カンマなしの数字（「ちょうど」と同じ形）
+ */
+export function addTendered(text: string, amount: number): string {
+  const current = parseTendered(text);
+  if (current === null) return text;
+  const next = current + amount;
+  return next <= TENDERED_MAX ? String(next) : text;
+}
+
 /** 金額の表示：¥1,200 */
 export function formatYen(n: number): string {
   return `¥${n.toLocaleString('ja-JP')}`;
