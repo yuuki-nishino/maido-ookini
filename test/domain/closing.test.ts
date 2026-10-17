@@ -1,6 +1,6 @@
 // レジ締め（testing.md §2 の closingView、data-model.md §5.3）
 import { describe, expect, it } from 'vitest';
-import { calcDiff, calcExpectedCash, closingView, diffKind, normalizeClosingNote, parseCashAmount } from '../../src/lib/domain';
+import { calcDiff, calcExpectedCash, CASH_MAX, cashCountView, closingView, COUNT_MAX, diffKind, normalizeClosingNote, parseCashAmount, parseCount } from '../../src/lib/domain';
 
 describe('calcExpectedCash / calcDiff / diffKind', () => {
   it('あるはずの現金 ＝ 準備金 ＋ 現金売上。差額 ＝ 数えた現金 − あるはずの現金', () => {
@@ -65,5 +65,48 @@ describe('normalizeClosingNote', () => {
     expect(normalizeClosingNote('あ'.repeat(200))).toHaveLength(200);
     expect(normalizeClosingNote('あ'.repeat(201))).toBeNull();
     expect(normalizeClosingNote('🍜'.repeat(101))).toBeNull();
+  });
+});
+
+describe('parseCount（枚数。#64）', () => {
+  it.each([
+    ['', 0],
+    ['0', 0],
+    ['12', 12],
+    ['１２', 12],
+    [' 3 ', 3],
+    ['5枚', 5],
+    [String(COUNT_MAX), COUNT_MAX],
+  ])('%s → %d', (s, v) => expect(parseCount(s)).toBe(v));
+  it.each(['-1', '1.5', 'abc', '1,000', String(COUNT_MAX + 1)])('%s は拒否', (s) => expect(parseCount(s)).toBeNull());
+});
+
+describe('cashCountView（枚数から、数えた現金を出す。#64）', () => {
+  it('種類ごとの小計と、合計', () => {
+    const v = cashCountView({ 10000: '2', 1000: '12', 500: '3', 100: '7', 10: '4', 1: '9' });
+    expect(v.used).toBe(true);
+    expect(v.total).toBe(20000 + 12000 + 1500 + 700 + 40 + 9);
+    expect(v.lines.find((l) => l.denomination === 1000)).toEqual({ denomination: 1000, count: 12, subtotal: 12000 });
+    expect(v.lines.find((l) => l.denomination === 5000)).toEqual({ denomination: 5000, count: 0, subtotal: 0 });
+  });
+  it('何も入れていない（空白だけも）→ 使っていない（数えた現金は、手で入れる）', () => {
+    expect(cashCountView({}).used).toBe(false);
+    expect(cashCountView({ 100: ' ' }).used).toBe(false);
+    expect(cashCountView({}).total).toBe(0);
+  });
+  it('0枚だけでも、使っている（合計 0）', () => {
+    expect(cashCountView({ 100: '0' })).toMatchObject({ used: true, total: 0 });
+  });
+  it('不正な行があれば、合計は null（その行の小計も null）', () => {
+    const v = cashCountView({ 1000: '3', 100: 'x' });
+    expect(v.total).toBeNull();
+    expect(v.overMax).toBe(false);
+    expect(v.lines.find((l) => l.denomination === 100)?.subtotal).toBeNull();
+  });
+  it('合計が上限（CASH_MAX）を超えたら、null（overMax）', () => {
+    const v = cashCountView({ 10000: String(COUNT_MAX), 5000: String(COUNT_MAX) });
+    expect(v.total).toBeNull();
+    expect(v.overMax).toBe(true);
+    expect(cashCountView({ 10000: '1000' }).total).toBe(CASH_MAX);
   });
 });
