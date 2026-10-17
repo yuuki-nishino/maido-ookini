@@ -1,12 +1,15 @@
 // お客様画面の状態の判定（testing.md §2 の customerView。screens.md §4.1 の表）
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  chimeButton,
+  nextPendingAlert,
   CUSTOMER_STATUS_TEXT,
   customerView,
   formatClock,
   isWaiting,
   parseOrderLink,
-  shouldVibrate,
+  shouldAlert,
+  shouldKeepAwake,
   SLOW_AFTER_MS,
   startWaitTicker,
   type CustomerSnapshot,
@@ -51,26 +54,88 @@ describe('customerView', () => {
   });
 });
 
-describe('shouldVibrate', () => {
-  it('調理中 → できあがり、のときだけ振動する', () => {
-    expect(shouldVibrate('preparing', 'ready')).toBe(true);
+describe('shouldAlert', () => {
+  it('調理中 → できあがり、のときだけ知らせる（音・振動）', () => {
+    expect(shouldAlert('preparing', 'ready')).toBe(true);
   });
-  it('最初の表示では、振動しない（できあがりの注文を、あとから開いたとき）', () => {
-    expect(shouldVibrate(null, 'ready')).toBe(false);
+  it('最初の表示では、知らせない（できあがりの注文を、あとから開いたとき）', () => {
+    expect(shouldAlert(null, 'ready')).toBe(false);
   });
-  it('ほかの変化では、振動しない', () => {
-    expect(shouldVibrate('ready', 'ready')).toBe(false);
-    expect(shouldVibrate('ready', 'done')).toBe(false);
-    expect(shouldVibrate('ready', 'preparing')).toBe(false);
-    expect(shouldVibrate('done', 'ready')).toBe(false);
-    expect(shouldVibrate('cancelled', 'ready')).toBe(false);
-    expect(shouldVibrate('preparing', 'cancelled')).toBe(false);
+  it('ほかの変化では、知らせない', () => {
+    expect(shouldAlert('ready', 'ready')).toBe(false);
+    expect(shouldAlert('ready', 'done')).toBe(false);
+    expect(shouldAlert('ready', 'preparing')).toBe(false);
+    expect(shouldAlert('done', 'ready')).toBe(false);
+    expect(shouldAlert('cancelled', 'ready')).toBe(false);
+    expect(shouldAlert('preparing', 'cancelled')).toBe(false);
+  });
+});
+
+describe('chimeButton（音のお知らせのボタン。#57）', () => {
+  it('調理中で、まだタップされていない → arm（「できあがりを音で知らせる」）', () => {
+    expect(chimeButton('preparing', false, false)).toBe('arm');
+  });
+  it('タップのあと、鳴らせる → armed（ボタンではなく、表示だけ）', () => {
+    expect(chimeButton('preparing', true, true)).toBe('armed');
+  });
+  it('タップのあと、鳴らせない状態に戻った（ホームから戻ったあとなど）→ retry（「音をオンにし直す」）', () => {
+    expect(chimeButton('preparing', true, false)).toBe('retry');
+  });
+  it('できあがりで、まだ鳴らせていない知らせがあり、鳴らせない状態 → retry（タップで、すぐ鳴らす）', () => {
+    expect(chimeButton('ready', true, false, true)).toBe('retry');
+  });
+  it('できあがりでも、知らせを鳴らせた・鳴らせる・タップしていないときは、出さない', () => {
+    expect(chimeButton('ready', true, false, false)).toBeNull();
+    expect(chimeButton('ready', true, true, true)).toBeNull();
+    expect(chimeButton('ready', false, false, true)).toBeNull();
+  });
+  it('お渡し済み・取り消しでは、出さない（もう鳴らすことがない）', () => {
+    for (const status of ['done', 'cancelled'] as const) {
+      for (const pending of [false, true]) {
+        expect(chimeButton(status, false, false, pending)).toBeNull();
+        expect(chimeButton(status, true, true, pending)).toBeNull();
+        expect(chimeButton(status, true, false, pending)).toBeNull();
+      }
+    }
+  });
+});
+
+describe('nextPendingAlert（まだ鳴らせていない、できあがりの知らせ。#57）', () => {
+  it('調理中 → できあがりで、立てる', () => {
+    expect(nextPendingAlert(false, 'preparing', 'ready')).toBe(true);
+  });
+  it('最初の表示（できあがりの注文を、あとから開いた）では、立てない', () => {
+    expect(nextPendingAlert(false, null, 'ready')).toBe(false);
+  });
+  it('できあがりのままなら、残す（声の読み込み待ち・裏に回っている・再開待ち）。鳴らせて消したあとは、消えたまま', () => {
+    expect(nextPendingAlert(true, 'ready', 'ready')).toBe(true);
+    expect(nextPendingAlert(false, 'ready', 'ready')).toBe(false);
+  });
+  it('できあがりでなくなったら、消す（お渡し済み・調理中に戻す・取り消し）', () => {
+    expect(nextPendingAlert(true, 'ready', 'done')).toBe(false);
+    expect(nextPendingAlert(true, 'ready', 'preparing')).toBe(false);
+    expect(nextPendingAlert(true, 'ready', 'cancelled')).toBe(false);
+  });
+});
+
+describe('shouldKeepAwake（画面を消えなくするか。#57）', () => {
+  it('タップのあと、調理中・できあがりの間だけ', () => {
+    expect(shouldKeepAwake('preparing', true)).toBe(true);
+    expect(shouldKeepAwake('ready', true)).toBe(true);
+  });
+  it('タップの前は、しない（取れない端末があるうえ、お客様が求めていない）', () => {
+    expect(shouldKeepAwake('preparing', false)).toBe(false);
+  });
+  it('お渡し済み・取り消し・まだ表示していないときは、しない（電池のため）', () => {
+    expect(shouldKeepAwake('done', true)).toBe(false);
+    expect(shouldKeepAwake('cancelled', true)).toBe(false);
+    expect(shouldKeepAwake(null, true)).toBe(false);
   });
 });
 
 describe('CUSTOMER_STATUS_TEXT（SPEC 6.7）', () => {
   it('バッジと案内文', () => {
-    expect(CUSTOMER_STATUS_TEXT.preparing).toEqual({ badge: '調理中', message: 'ただいま調理中です。できあがるまでこのままお待ちください' });
+    expect(CUSTOMER_STATUS_TEXT.preparing).toEqual({ badge: '調理中', message: 'ただいま調理中です。できあがるまで、この画面を開いたままお待ちください' });
     expect(CUSTOMER_STATUS_TEXT.ready).toEqual({ badge: 'へい、お待ち！', message: '受け渡し口までお越しください' });
     expect(CUSTOMER_STATUS_TEXT.done).toEqual({ badge: 'お渡し済み', message: '毎度おおきに！' });
     expect(CUSTOMER_STATUS_TEXT.cancelled.badge).toBe('取り消し');

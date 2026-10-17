@@ -50,14 +50,46 @@ export function customerView(snapshot: CustomerSnapshot | null, waitedMs: number
   return snapshot.fromCache ? { state: 'loading', slow: waitedMs >= SLOW_AFTER_MS } : { state: 'notFound' };
 }
 
-/** 「できあがり」へ変わった瞬間だけ、振動する（直前が調理中で、新しいのができあがり）。最初の表示（prev が null）では、しない */
-export function shouldVibrate(prev: CustomerStatus | null, next: CustomerStatus): boolean {
+/** 「できあがり」へ変わった瞬間だけ、知らせる（音・振動。直前が調理中で、新しいのができあがり）。最初の表示（prev が null）では、しない */
+export function shouldAlert(prev: CustomerStatus | null, next: CustomerStatus): boolean {
   return prev === 'preparing' && next === 'ready';
+}
+
+/**
+ * まだ鳴らせていない、できあがりの知らせがあるか（#57）。調理中 → できあがりで立て、鳴らせたら（呼んだ側で）消す。
+ * できあがりでなくなったら（お渡し済み・調理中に戻す）、消す。声の読み込み待ち・裏に回っている間・拒否からの、タップのし直し待ちのあいだ、残る
+ */
+export function nextPendingAlert(pending: boolean, prev: CustomerStatus | null, next: CustomerStatus): boolean {
+  if (shouldAlert(prev, next)) return true;
+  return next === 'ready' && pending;
+}
+
+/**
+ * 音のお知らせのボタン（screens.md §4.2、#57）。ブラウザは、一度もタップされていないページでは、音を鳴らせないため、タップしてもらう
+ * - arm：調理中で、まだタップされていない →「できあがりを音で知らせる」
+ * - retry：タップのあと、音を鳴らせない状態に戻った（直近の再生が拒否された〔NotAllowedError〕など）→「音をオンにし直す」。
+ *   調理中のときと、できあがりで、まだ鳴らせていない知らせ（pending）があるとき（タップで、すぐ鳴らす）
+ * - armed：調理中で、鳴らせる →「音でお知らせします」（ボタンではなく、表示だけ）
+ * - null：出さない
+ */
+export type ChimeButton = 'arm' | 'retry' | 'armed' | null;
+
+export function chimeButton(status: CustomerStatus, armed: boolean, audioRunning: boolean, pending = false): ChimeButton {
+  if (status === 'preparing') {
+    if (!armed) return 'arm';
+    return audioRunning ? 'armed' : 'retry';
+  }
+  return status === 'ready' && armed && !audioRunning && pending ? 'retry' : null;
+}
+
+/** 画面を消えないようにしておくか（Screen Wake Lock）。タップのあと、調理中・できあがりの間だけ（お渡し済み・取り消しでは、電池のため、外す） */
+export function shouldKeepAwake(status: CustomerStatus | null, armed: boolean): boolean {
+  return armed && (status === 'preparing' || status === 'ready');
 }
 
 /** 状況ごとの、バッジと案内文（SPEC 6.7） */
 export const CUSTOMER_STATUS_TEXT: Record<CustomerStatus, { badge: string; message: string }> = {
-  preparing: { badge: '調理中', message: 'ただいま調理中です。できあがるまでこのままお待ちください' },
+  preparing: { badge: '調理中', message: 'ただいま調理中です。できあがるまで、この画面を開いたままお待ちください' },
   ready: { badge: 'へい、お待ち！', message: '受け渡し口までお越しください' },
   done: { badge: 'お渡し済み', message: '毎度おおきに！' },
   cancelled: { badge: '取り消し', message: 'この注文は取り消されました。お近くのスタッフへお声がけください' },

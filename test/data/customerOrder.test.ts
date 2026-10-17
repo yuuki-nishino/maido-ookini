@@ -85,7 +85,7 @@ describe('watchOrder（お客様）', () => {
     expect(JSON.stringify(snap)).not.toMatch(/paypay|辛さ抜き|staff-uid/);
   });
 
-  it('スタッフの操作（できあがり）が、数秒以内に届く。状態の変化から、振動の判断ができる', async () => {
+  it('スタッフの操作（できあがり）が、数秒以内に届く。状態の変化から、知らせる（音・振動）判断ができる', async () => {
     setCustomer();
     const w = watch('e1', 'o1');
     await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order?.status === 'preparing' && !s.fromCache));
