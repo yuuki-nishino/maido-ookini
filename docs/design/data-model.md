@@ -190,6 +190,7 @@ erDiagram
 | payment | 'cash' \| 'paypay' | ○ | | **可** |
 | note | string | | 0〜100文字（UTF-16 の単位。絵文字は2文字）。任意（項目が無い・空は、メモなし）。調理で気をつけること（「辛さ抜き」）。お客様画面には出さない（#40） | **可** |
 | status | 'preparing' \| 'ready' \| 'done' \| 'cancelled' | ○ | | 可（遷移表に従う） |
+| calls | int | | 「もう一度呼ぶ」を押した回数（#58）。**確定では書かない**（無い＝ 0 として読む）。できあがりのときだけ、ちょうど +1 できる。お客様画面は、増えたのを見て、声を鳴らす | 可（+1 だけ） |
 | cancelledFrom | 'preparing' \| 'ready' \| 'done' \| null | ○ | 取り消し前の状態。取り消し中だけ値を持つ | 可 |
 | qr | boolean | ○ | QRを発行した（待ちあり）注文か | 不可 |
 | createdAt | timestamp | ○ | serverTimestamp | 不可 |
@@ -258,6 +259,7 @@ erDiagram
 - どの更新でも、`updatedBy = uid`、`updatedAt = serverTimestamp` を書く
 - 支払い方法の変更は、`payment`、`updatedBy`、`updatedAt` のみ書く（状態は変えない）
 - メモの変更は、`note`、`updatedBy`、`updatedAt` のみ書く（状態は変えない。空にするときは、空の文字列を書く。#40）
+- もう一度呼ぶ（#58）は、`calls = increment(1)`、`updatedBy`、`updatedAt` のみ書く。`status == 'ready'` のときだけ（状態は変えない）。状態の変更と同時には書かない（調理中に戻して、また完成にしても、`calls` はそのまま）
 - 「渡したを戻す」で ready に戻した注文の `doneAt` は `null`。「取り消しを戻す」で復帰した注文の時刻項目は、取り消し前のまま
 
 ## 4. インデックスとクエリ

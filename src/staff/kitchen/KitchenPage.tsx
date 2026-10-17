@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Loading } from '../../components/Feedback';
-import { changeNote, changePayment, transitionOrder, watchOrdersOfDay } from '../../lib/data/orders';
+import { changeNote, changePayment, recallOrder, transitionOrder, watchOrdersOfDay } from '../../lib/data/orders';
 import type { Order } from '../../lib/data/types';
 import { toDay } from '../../lib/domain/day';
 import { isHoldable } from '../../lib/domain/orderHold';
@@ -87,7 +87,22 @@ export function KitchenPage({ eventId, uid }: { eventId: string; uid: string }) 
   };
   const togglePayment = (order: Order) => report(changePayment(eventId, order.id, order.payment === 'cash' ? 'paypay' : 'cash', uid), order.number);
 
-  const card = (o: Order) => <OrderCard order={o} today={today} now={now} onAction={act} onTogglePayment={togglePayment} onQr={setQrOrder} onEditNote={setNoteOrder} />;
+  // もう一度呼ぶ（#58）。待たずに進め、拒否されたとき（ほかのスタッフが先に「渡した」にした、など）だけ知らせる
+  const recall = (order: Order) => report(recallOrder(eventId, order, uid), order.number);
+
+  const card = (o: Order) => (
+    <OrderCard
+      order={o}
+      today={today}
+      now={now}
+      onAction={act}
+      onTogglePayment={togglePayment}
+      onQr={setQrOrder}
+      onEditNote={setNoteOrder}
+      held={held.some((h) => h.orderId === o.id)}
+      onRecall={recall}
+    />
+  );
 
   return (
     <section class={styles.page} aria-labelledby="kitchen-title">

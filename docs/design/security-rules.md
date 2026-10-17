@@ -254,6 +254,15 @@ service cloud.firestore {
           && (request.resource.data.cancelledAt == null || request.resource.data.cancelledAt == request.time
               || request.resource.data.cancelledAt == resource.data.cancelledAt);
 
+        // もう一度呼ぶ（#58）：できあがりの注文の calls を、ちょうど1だけ増やす（無い注文は 0 から）。
+        // 状態・支払い方法・メモなどは、同時に変えない（上の更新では、calls を変えられない）
+        allow update: if isMember(eventId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['calls', 'updatedBy', 'updatedAt'])
+          && resource.data.status == 'ready'
+          && request.resource.data.calls == resource.data.get('calls', 0) + 1
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.updatedAt == request.time;
+
         // イベントの削除中だけ
         allow delete: if isOwner(eventId) && isDeleting(eventId);
       }
@@ -364,6 +373,7 @@ service cloud.firestore {
 | R6 | ✅ #4。`cancelledFrom` が `null` の注文で、`status == resource.data.cancelledFrom` は `false` になり、取り消し前と違う状態へ戻す更新は拒否される。取り消し以外の状態で `cancelledFrom` に値を入れる、取り消し中のまま書き換える、も拒否 | orders：19〜21 |
 | R7 | ✅ #4。`diff().affectedKeys()` は、値が変わらない項目（`total` を同じ値で書く、`readyAt` が `null` のまま）を含まない。値を変えると拒否 | orders：16 |
 | R7 の追加（#40） | ✅ `note`（メモ）を、作成時・更新時に検査する（文字列・100文字まで・任意）。メモの更新は、`diff().affectedKeys()` に `note` を足して許す。メモと一緒に `items` / `total` / `number` を書き換えるのは拒否される。**足した6つのルールの行（`validNote` の型・長さ、作成の `validNote`・`hasOnly` の `note`、更新の `affectedKeys` の `note`・`validNote`）を、1つずつ無効にすると、テストが失敗する**ことを確かめた | orders：メモ（作成・更新） |
+| R7 の追加（#58） | ✅ `calls`（もう一度呼ぶ）は、別の `allow update` で、`calls`・`updatedBy`・`updatedAt` だけを変え、できあがりのときに、ちょうど +1 だけ許す（`resource.data.get('calls', 0)`：無い注文は 0 から）。+2・減らす・数でない値・調理中／お渡し済み／取り消し・状態や支払い方法・メモと同時・メンバー以外は拒否。上の（ふつうの）更新は `calls` を `affectedKeys` に含まないため、状態の変更と一緒に `calls` を変えられない。確定（作成）では書けない。**同じ値（1 → 1）を書くのは、`calls` が変わらないため、ふつうの更新として通る**（害は無い） | orders：もう一度呼ぶ |
 | R8 | ✅ #4・#13。#13 で、データアクセスの結合テスト（testing.md §4 の5〜7）でも、確定とやめるの並行で並存しないことを確かめた。「墓標 → 注文」「注文 → 墓標」の両方の順序で、後の書き込みが拒否される。**同じバッチで、注文と墓標を両方作る**ことも拒否する（`!exists` を `!existsAfter` にした。下記）。確定とやめるのトランザクションを並行して5回実行し、注文と墓標が並存しないことも確かめた（補助） | voids：24〜26 |
 | R9 | ✅ #4。三項演算子（カウンターが無ければ 0）で、その日の最初の注文が1番になる。トランザクション・バッチの中の `getAfter` で、カウンターを進めない・2つ進める・番号と合わない・同じ番号の2件目、は拒否される | orders：7・13〜15、カウンター：48 |
 | R10 | ✅ #3（イベント・招待の部分）。`startDate > endDate` は拒否。`createdAt + duration.value(1, 'd')`：23時間前の招待は有効、25時間前は無効 | events：31、members：34・36 |

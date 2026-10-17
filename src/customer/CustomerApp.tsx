@@ -12,13 +12,16 @@ import {
   isWaiting,
   nextPendingAlert,
   parseOrderLink,
+  RECALL_NOTICE_MS,
   shouldAlert,
   shouldKeepAwake,
+  shouldRecall,
+  showRecallNotice,
+  type AlertPoint,
   startWaitTicker,
   type ChimeButton,
   type CustomerOrder,
   type CustomerSnapshot,
-  type CustomerStatus,
 } from '../lib/domain/customerView';
 import { chimeDebug, chimeLog, getVoiceVersion, isChimeRunning, log, playChime, setKeepAwake, syncAwake, unlockChime } from './chime';
 import styles from './CustomerApp.module.css';
@@ -38,23 +41,30 @@ export function CustomerApp() {
   const armedRef = useRef(false); // 購読のコールバックから読むため
   const [audioRunning, setAudioRunning] = useState(false);
   const [voiceVersion, setVoiceVersion] = useState(0);
-  // まだ鳴らせていない、できあがりの知らせ（声の読み込み待ち・裏に回っている間・拒否からの、タップのし直し待ち）。鳴らせたら消す
-  const [pending, setPending] = useState(false);
+  // まだ鳴らせていない知らせの番号（声の読み込み待ち・裏に回っている間・拒否からの、タップのし直し待ち）。鳴らせたら null
+  const [pending, setPending] = useState<number | null>(null);
+  // お店が「もう一度呼ぶ」を押した時刻（#58。「お店からお呼びしています」を出す）
+  const [recalledAt, setRecalledAt] = useState<number | null>(null);
   const [visible, setVisible] = useState(document.visibilityState === 'visible');
   const [, setLogTick] = useState(0); // ?debug の記録を、描き直すため
 
   useEffect(() => {
     if (!link) return;
-    let prev: CustomerStatus | null = null; // 最初の表示では、知らせない
+    let prev: AlertPoint | null = null; // 最初の表示では、知らせない
+    let alertId = 0;
     return watchOrder(link.eventId, link.orderId, (s) => {
       setSnapshot(s);
       setUpdatedAt(new Date());
       if (s.kind === 'doc' && s.order) {
-        const next = s.order.status;
-        // 「できあがり」に変わった瞬間だけ知らせる：振動は、その場で（対応する端末のみ。iPhone は非対応）。声は、下の effect が鳴らす（タップのあとだけ）
-        if (shouldAlert(prev, next)) navigator.vibrate?.([200, 100, 200]);
+        const next: AlertPoint = { status: s.order.status, calls: s.order.calls };
+        const recall = shouldRecall(prev, next);
+        // 「できあがり」に変わった瞬間と、お店の「もう一度呼ぶ」で知らせる：振動は、その場で（対応する端末のみ。iPhone は非対応）。
+        // 声は、下の effect が鳴らす（タップのあとだけ）
+        if (recall || shouldAlert(prev?.status ?? null, next.status)) navigator.vibrate?.([200, 100, 200]);
+        if (recall) setRecalledAt(Date.now());
         const from = prev;
-        setPending((p) => nextPendingAlert(p, from, next));
+        const id = ++alertId;
+        setPending((p) => nextPendingAlert(p, from, next, id));
         prev = next;
         setLastOrder(s.order); // エラーのあとも、カードを残すため
       }
@@ -85,9 +95,17 @@ export function CustomerApp() {
 
   // まだ鳴らせていない知らせがあれば、鳴らす。鳴らせなければ、声の読み込み・拒否からの回復（タップ）・表示に戻る、のどれかが変わったときに、もう一度
   useEffect(() => {
-    if (!pending || !armed) return;
-    void playChime().then((played) => played && setPending(false));
+    if (pending === null || !armed) return;
+    void playChime(pending).then((played) => played && setPending((p) => (p === pending ? null : p)));
   }, [pending, armed, audioRunning, voiceVersion, visible]);
+
+  // 「お店からお呼びしています」は、呼ばれてから30秒で消す（呼ばれ直したら、数え直す）
+  const recallNotice = showRecallNotice(recalledAt, status);
+  useEffect(() => {
+    if (recalledAt === null) return;
+    const id = setTimeout(() => setRecalledAt(null), RECALL_NOTICE_MS);
+    return () => clearTimeout(id);
+  }, [recalledAt]);
 
   // ホームに戻って、また開いたとき：画面を消えなくするのを取り直す。声は、上の effect が鳴らす（拒否されたら、ボタン「音をオンにし直す」）
   useEffect(() => {
@@ -140,7 +158,7 @@ export function CustomerApp() {
             電波の良い場所で、もう一度開いてください
           </Notice>
         ) : view?.state === 'active' ? (
-          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} chime={chimeButton(view.order.status, armed, audioRunning, pending)} onArm={onArm} />
+          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} chime={chimeButton(view.order.status, armed, audioRunning, pending !== null)} recallNotice={recallNotice} onArm={onArm} />
         ) : null}
         {chimeDebug && (
           <pre class={styles.debug}>
@@ -161,9 +179,9 @@ function Notice({ title, error = false, children }: { title: string; error?: boo
   );
 }
 
-type ActiveProps = { order: CustomerOrder; fromCache: boolean; updatedAt: Date | null; chime: ChimeButton; onArm: () => void };
+type ActiveProps = { order: CustomerOrder; fromCache: boolean; updatedAt: Date | null; chime: ChimeButton; recallNotice: boolean; onArm: () => void };
 
-function Active({ order, fromCache, updatedAt, chime, onArm }: ActiveProps) {
+function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: ActiveProps) {
   const text = CUSTOMER_STATUS_TEXT[order.status];
   return (
     <>
@@ -176,6 +194,12 @@ function Active({ order, fromCache, updatedAt, chime, onArm }: ActiveProps) {
         </h2>
         <span class={styles.badge}>{text.badge}</span>
         <p class={styles.message}>{text.message}</p>
+        {/* お店の「もう一度呼ぶ」（#58）。音を鳴らせないお客様にも、文字で分かるように */}
+        {recallNotice && (
+          <p class={styles.recall} role="alert">
+            📣 お店からお呼びしています
+          </p>
+        )}
       </section>
 
       {chime === 'armed' ? (

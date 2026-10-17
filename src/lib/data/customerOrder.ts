@@ -14,6 +14,7 @@ function toCustomerOrder(d: Record<string, unknown>): CustomerOrder | null {
     number: d.number,
     status: d.status as CustomerStatus,
     total: d.total,
+    calls: typeof d.calls === 'number' ? d.calls : 0, // 「もう一度呼ぶ」の回数（#58。無い注文は 0）
     items: items.map((i: { name?: unknown; price?: unknown; qty?: unknown }) => ({
       name: String(i.name ?? ''),
       price: Number(i.price ?? 0),

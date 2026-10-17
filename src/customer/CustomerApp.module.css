@@ -46,6 +46,16 @@
   --status-bd: var(--status-void-fg);
 }
 
+.recall {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-pill);
+  background: var(--status-fg);
+  color: var(--status-bg);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+
 .label {
   font-size: var(--fs-md);
   font-weight: 700;

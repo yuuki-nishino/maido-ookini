@@ -41,6 +41,8 @@ export interface Order {
   /** メモ（無い注文は、空） */
   note: string;
   status: OrderStatus;
+  /** 「もう一度呼ぶ」を押した回数（#58。無い注文は 0） */
+  calls: number;
   cancelledFrom: Exclude<OrderStatus, 'cancelled'> | null;
   qr: boolean;
   createdAt: Date | null;

@@ -1,10 +1,13 @@
 // 調理画面の注文のカード（screens.md §3.5）。番号（大）・品目・支払い方法・合計・経過分数、状態ごとの操作
+import { useEffect, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
 import { PaymentBadge, StatusBadge } from '../../components/Badge';
 import type { Order } from '../../lib/data/types';
 import { ACTION_LABEL, availableActions, dayMark, elapsedMinutes, type OrderAction } from '../../lib/domain/orderStatus';
 import { needsCooking } from '../../lib/domain/cooking';
 import { formatYen } from '../../lib/domain/order';
+import { recallState } from '../../lib/domain/recall';
+import { browserOnline } from '../../state/online';
 import styles from './OrderCard.module.css';
 
 type Props = {
@@ -16,9 +19,13 @@ type Props = {
   onQr: (order: Order) => void;
   /** メモの修正（#40） */
   onEditNote: (order: Order) => void;
+  /** 「完成」の猶予の間か（#45。まだサーバーに、できあがりが書かれていない） */
+  held?: boolean;
+  /** もう一度呼ぶ（#58） */
+  onRecall?: (order: Order) => void;
 };
 
-export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, onEditNote }: Props) {
+export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, onEditNote, held = false, onRecall }: Props) {
   const finished = order.status === 'done' || order.status === 'cancelled';
   const mark = dayMark(order.day, today);
   const [main, ...rest] = availableActions(order.status);
@@ -63,6 +70,7 @@ export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, 
       </div>
 
       <div class={styles.actions}>
+        {onRecall && <RecallButton order={order} held={held} onRecall={onRecall} />}
         {main && bigMain && (
           <Button variant="primary" big block onClick={() => onAction(order, main)}>
             {ACTION_LABEL[main]}
@@ -95,5 +103,43 @@ export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, 
         </div>
       </div>
     </article>
+  );
+}
+
+/**
+ * もう一度呼ぶ（#58）。できあがりの注文（QR あり）だけ。押すと、お客様の画面で、声が鳴り直す。
+ * 押したあと10秒は押せない（この端末だけ。カードを開き直すと、数え直す）。呼んだ回数は、ほかのスタッフにも見える
+ */
+function RecallButton({ order, held, onRecall }: { order: Order; held: boolean; onRecall: (order: Order) => void }) {
+  const [lastAt, setLastAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const state = recallState({ status: order.status, qr: order.qr, held, online: browserOnline.value, lastAt, now });
+  const waiting = state.kind === 'wait';
+  useEffect(() => {
+    if (!waiting) return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [waiting]);
+  if (state.kind === 'hidden') return null;
+
+  const label =
+    state.kind === 'wait' ? `🔔 呼びました（あと${state.seconds}秒）` : state.kind === 'held' ? '🔔 もう一度呼ぶ（完成の送信待ち）' : state.kind === 'offline' ? '🔔 もう一度呼ぶ（通信が必要）' : '🔔 もう一度呼ぶ';
+  return (
+    <div class={styles.recall}>
+      <Button
+        variant="secondary"
+        block
+        disabled={state.kind !== 'ready'}
+        onClick={() => {
+          const t = Date.now();
+          setLastAt(t);
+          setNow(t);
+          onRecall(order);
+        }}
+      >
+        {label}
+      </Button>
+      {order.calls > 0 && <span class={styles.recallCount}>呼んだ：{order.calls}回</span>}
+    </div>
   );
 }

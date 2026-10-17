@@ -17,3 +17,4 @@ export * from './csv';
 export * from './connection';
 export * from './orderHold';
 export * from './cooking';
+export * from './recall';

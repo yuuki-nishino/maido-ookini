@@ -211,6 +211,15 @@ service cloud.firestore {
           && (request.resource.data.cancelledAt == null || request.resource.data.cancelledAt == request.time
               || request.resource.data.cancelledAt == resource.data.cancelledAt);
 
+        // もう一度呼ぶ（#58）：できあがりの注文の calls を、ちょうど1だけ増やす（無い注文は 0 から）。
+        // 状態・支払い方法・メモなどは、同時に変えない（上の更新では、calls を変えられない）
+        allow update: if isMember(eventId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['calls', 'updatedBy', 'updatedAt'])
+          && resource.data.status == 'ready'
+          && request.resource.data.calls == resource.data.get('calls', 0) + 1
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.updatedAt == request.time;
+
         // イベントの削除中だけ
         allow delete: if isOwner(eventId) && isDeleting(eventId);
       }
