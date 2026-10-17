@@ -63,6 +63,48 @@ export function parseCashAmount(input: string): number | null {
   return Number.isSafeInteger(n) && n <= CASH_MAX ? n : null;
 }
 
+/** 枚数で数えるお金の種類（#64）。2,000円札は入れない（ほぼ受け取らない。来たら、手で合計を入れる） */
+export const DENOMINATIONS = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1] as const;
+export type Denomination = (typeof DENOMINATIONS)[number];
+/** 1種類の枚数の上限（桁の打ち間違いを防ぐ） */
+export const COUNT_MAX = 9999;
+
+/** 枚数の入力：0〜9,999 の整数（全角数字を受け付ける）。空は 0。不正なら null */
+export function parseCount(input: string): number | null {
+  const text = input.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).trim().replace(/枚$/, '');
+  if (text === '') return 0;
+  if (!/^\d+$/.test(text)) return null;
+  const n = Number(text);
+  return n <= COUNT_MAX ? n : null;
+}
+
+/** 枚数の入力（種類 → 文字のまま） */
+export type CashCounts = Partial<Record<Denomination, string>>;
+
+export interface CashCountView {
+  /** 1つでも枚数が入っている（このときは、数えた現金を、枚数から計算する） */
+  used: boolean;
+  /** 種類ごとの小計（不正な行は null） */
+  lines: { denomination: Denomination; count: number | null; subtotal: number | null }[];
+  /** 合計。不正な行がある・上限（CASH_MAX）を超えるときは null */
+  total: number | null;
+  /** 合計が上限を超えた */
+  overMax: boolean;
+}
+
+/** 枚数から、小計と合計を計算する（#64。レジ締めで、数えた現金を出す） */
+export function cashCountView(counts: CashCounts): CashCountView {
+  const lines = DENOMINATIONS.map((denomination) => {
+    const count = parseCount(counts[denomination] ?? '');
+    return { denomination, count, subtotal: count === null ? null : count * denomination };
+  });
+  const used = DENOMINATIONS.some((d) => (counts[d] ?? '').trim() !== '');
+  const invalid = lines.some((l) => l.subtotal === null);
+  const sum = lines.reduce((acc, l) => acc + (l.subtotal ?? 0), 0);
+  const overMax = !invalid && sum > CASH_MAX;
+  return { used, lines, total: invalid || overMax ? null : sum, overMax };
+}
+
 /** メモ：改行は空白に、前後の空白を除く。200文字を超えたら null */
 export function normalizeClosingNote(input: string): string | null {
   const note = input.replace(/[\r\n]+/g, ' ').trim();

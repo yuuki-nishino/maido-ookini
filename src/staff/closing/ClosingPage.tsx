@@ -1,8 +1,9 @@
 // レジ締め（screens.md §3.7、SPEC 6.4）。日付ごとに、準備金・あるはずの現金・数えた現金・差額を確かめ、記録する。
 // サーバーの確かな値（fetchOrdersOfDayFromServer・getClosing）でだけ行う。オフラインのときは、集計を出さず、「締める」を無効にする
 import type { TargetedEvent } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { DaySelector } from '../../components/DaySelector';
 import { Loading } from '../../components/Feedback';
 import { TextField } from '../../components/TextField';
@@ -14,15 +15,20 @@ import type { Closing, Member } from '../../lib/data/types';
 import {
   calcDiff,
   calcExpectedCash,
+  cashCountView,
   CLOSING_NOTE_MAX,
   closingView,
   diffKind,
   normalizeClosingNote,
   parseCashAmount,
+  type CashCounts,
+  type CashCountView,
+  type Denomination,
 } from '../../lib/domain/closing';
 import { formatDateTime, toDay } from '../../lib/domain/day';
 import { formatYen } from '../../lib/domain/order';
 import { summarize, type Summary } from '../../lib/domain/summary';
+import { clearCounts, countsFor, setCount } from '../../state/cashCount';
 import { currentEvent } from '../../state/myEvents';
 import { browserOnline } from '../../state/online';
 import { showToast } from '../../state/toast';
@@ -113,7 +119,10 @@ export function ClosingPage({ eventId, uid }: { eventId: string; uid: string }) 
   const loaded = load.status === 'ok' ? load : null;
   const view = loaded ? closingView(loaded.summary, loaded.closing, eventFloat) : null;
   const floatCash = parseCashAmount(floatText);
-  const actualCash = parseCashAmount(actualText);
+  // 数えた現金：枚数を1つでも入れたら、枚数から計算する（手で入れた値は使わない。#64）。入れていなければ、手で入れた値
+  const counts = countsFor(eventId, day);
+  const count = cashCountView(counts);
+  const actualCash = count.used ? count.total : parseCashAmount(actualText);
   const note = normalizeClosingNote(noteText);
   const expected = loaded && floatCash !== null ? calcExpectedCash(floatCash, loaded.summary.cashTotal) : null;
   const diff = expected !== null && actualCash !== null ? calcDiff(actualCash, expected) : null;
@@ -213,14 +222,32 @@ export function ClosingPage({ eventId, uid }: { eventId: string; uid: string }) 
                 error={floatText !== '' && floatCash === null ? '0円から10,000,000円の整数で入れてください' : null}
                 onInput={(e) => setFloatText(num(e))}
               />
-              <TextField
-                label="数えた現金（円）"
-                inputMode="numeric"
-                placeholder="例：25000"
-                value={actualText}
-                error={actualText !== '' && actualCash === null ? '0円から10,000,000円の整数で入れてください' : null}
-                onInput={(e) => setActualText(num(e))}
-              />
+              {count.used ? (
+                <TextField
+                  label="数えた現金（円）"
+                  readOnly
+                  value={count.total !== null ? count.total.toLocaleString('ja-JP') : ''}
+                  hint="下の枚数から計算しています"
+                  error={count.overMax ? '合計が10,000,000円を超えています' : count.total === null ? '枚数を確かめてください' : null}
+                />
+              ) : (
+                <TextField
+                  label="数えた現金（円）"
+                  inputMode="numeric"
+                  placeholder="例：25000"
+                  value={actualText}
+                  error={actualText !== '' && actualCash === null ? '0円から10,000,000円の整数で入れてください' : null}
+                  onInput={(e) => setActualText(num(e))}
+                />
+              )}
+              <div class={styles.countField}>
+                <CashCountPanel
+                  counts={counts}
+                  view={count}
+                  onChange={(d, text) => setCount(eventId, day, d, text)}
+                  onClear={() => clearCounts(eventId, day)}
+                />
+              </div>
               <div class={styles.noteField}>
                 <TextField
                   label="メモ（任意）"
@@ -246,7 +273,7 @@ export function ClosingPage({ eventId, uid }: { eventId: string; uid: string }) 
               <span>
                 {diff === null ? '差額' : diffKind(diff) === 'match' ? '差額：一致' : diffKind(diff) === 'short' ? '差額：不足' : '差額：多い'}
               </span>
-              <span>{diff === null ? '数えた現金を入れてください' : formatYen(Math.abs(diff))}</span>
+              <span>{diff === null ? (count.used ? '枚数を確かめてください' : '数えた現金を入れてください') : formatYen(Math.abs(diff))}</span>
             </div>
 
             {saveError && (
@@ -262,5 +289,79 @@ export function ClosingPage({ eventId, uid }: { eventId: string; uid: string }) 
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * お金の種類ごとの枚数（#64）。入れると、行ごとの小計と、数えた現金の合計が出る。内訳は保存しない。
+ * 何も入れなければ、数えた現金は、手で入れる（これまでどおり）
+ */
+type CashCountPanelProps = { counts: CashCounts; view: CashCountView; onChange: (d: Denomination, text: string) => void; onClear: () => void };
+
+function CashCountPanel({ counts, view, onChange, onClear }: CashCountPanelProps) {
+  const idBase = useId();
+  // 数えた途中で押し間違えると、全部消えるため、確かめる（レビュー 2）
+  const [confirmClear, setConfirmClear] = useState(false);
+  return (
+    <fieldset class={styles.count}>
+      <legend class={styles.countLegend}>枚数で数える（任意）</legend>
+      <p class={styles.hint}>入れると、数えた現金を自動で計算します</p>
+      <ul class={styles.countList}>
+        {view.lines.map((l) => {
+          const id = `${idBase}-${l.denomination}`;
+          return (
+            <li key={l.denomination} class={styles.countRow}>
+              <label for={id} class={styles.countLabel}>
+                {l.denomination.toLocaleString('ja-JP')}円
+              </label>
+              <input
+                id={id}
+                class={`${styles.countInput} ${l.count === null ? styles.countInvalid : ''}`}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="0"
+                aria-invalid={l.count === null ? true : undefined}
+                aria-describedby={l.count === null ? `${id}-error` : undefined}
+                value={counts[l.denomination] ?? ''}
+                onInput={(e) => onChange(l.denomination, e.currentTarget.value)}
+              />
+              <span class={styles.countUnit}>枚</span>
+              <span class={styles.countSubtotal}>
+                {l.subtotal === null ? (
+                  <span id={`${id}-error`} class={styles.countError}>
+                    0〜9,999枚
+                  </span>
+                ) : (
+                  formatYen(l.subtotal)
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {view.used && (
+        <div class={styles.countFoot}>
+          <span>
+            合計 <strong>{view.total !== null ? formatYen(view.total) : '—'}</strong>
+          </span>
+          <Button variant="secondary" onClick={() => setConfirmClear(true)}>
+            枚数を消す
+          </Button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={confirmClear}
+        title="入れた枚数を、すべて消しますか？"
+        confirmLabel="消す"
+        danger
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          onClear();
+        }}
+      >
+        数えた現金は、手で入れる形に戻ります。
+      </ConfirmDialog>
+    </fieldset>
   );
 }

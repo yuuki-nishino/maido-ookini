@@ -7,7 +7,7 @@ import styles from './TextField.module.css';
 
 type Props = Pick<
   PartialInputHTMLAttributes<HTMLInputElement>,
-  'name' | 'value' | 'placeholder' | 'inputMode' | 'autoComplete' | 'maxLength' | 'required' | 'disabled' | 'onInput' | 'onChange' | 'onBlur'
+  'name' | 'value' | 'placeholder' | 'inputMode' | 'autoComplete' | 'maxLength' | 'required' | 'disabled' | 'readOnly' | 'onInput' | 'onChange' | 'onBlur'
 > & {
   kind?: 'text' | 'date';
   label: string;
