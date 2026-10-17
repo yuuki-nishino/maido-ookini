@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   chimeButton,
+  nextPendingAlert,
   CUSTOMER_STATUS_TEXT,
   customerView,
   formatClock,
@@ -80,12 +81,40 @@ describe('chimeButton（音のお知らせのボタン。#57）', () => {
   it('タップのあと、鳴らせない状態に戻った（ホームから戻ったあとなど）→ retry（「音をオンにし直す」）', () => {
     expect(chimeButton('preparing', true, false)).toBe('retry');
   });
-  it('調理中でなければ、出さない（もう鳴らすことがない）', () => {
-    for (const status of ['ready', 'done', 'cancelled'] as const) {
-      expect(chimeButton(status, false, false)).toBeNull();
-      expect(chimeButton(status, true, true)).toBeNull();
-      expect(chimeButton(status, true, false)).toBeNull();
+  it('できあがりで、まだ鳴らせていない知らせがあり、鳴らせない状態 → retry（タップで、すぐ鳴らす）', () => {
+    expect(chimeButton('ready', true, false, true)).toBe('retry');
+  });
+  it('できあがりでも、知らせを鳴らせた・鳴らせる・タップしていないときは、出さない', () => {
+    expect(chimeButton('ready', true, false, false)).toBeNull();
+    expect(chimeButton('ready', true, true, true)).toBeNull();
+    expect(chimeButton('ready', false, false, true)).toBeNull();
+  });
+  it('お渡し済み・取り消しでは、出さない（もう鳴らすことがない）', () => {
+    for (const status of ['done', 'cancelled'] as const) {
+      for (const pending of [false, true]) {
+        expect(chimeButton(status, false, false, pending)).toBeNull();
+        expect(chimeButton(status, true, true, pending)).toBeNull();
+        expect(chimeButton(status, true, false, pending)).toBeNull();
+      }
     }
+  });
+});
+
+describe('nextPendingAlert（まだ鳴らせていない、できあがりの知らせ。#57）', () => {
+  it('調理中 → できあがりで、立てる', () => {
+    expect(nextPendingAlert(false, 'preparing', 'ready')).toBe(true);
+  });
+  it('最初の表示（できあがりの注文を、あとから開いた）では、立てない', () => {
+    expect(nextPendingAlert(false, null, 'ready')).toBe(false);
+  });
+  it('できあがりのままなら、残す（声の読み込み待ち・裏に回っている・再開待ち）。鳴らせて消したあとは、消えたまま', () => {
+    expect(nextPendingAlert(true, 'ready', 'ready')).toBe(true);
+    expect(nextPendingAlert(false, 'ready', 'ready')).toBe(false);
+  });
+  it('できあがりでなくなったら、消す（お渡し済み・調理中に戻す・取り消し）', () => {
+    expect(nextPendingAlert(true, 'ready', 'done')).toBe(false);
+    expect(nextPendingAlert(true, 'ready', 'preparing')).toBe(false);
+    expect(nextPendingAlert(true, 'ready', 'cancelled')).toBe(false);
   });
 });
 

@@ -10,6 +10,7 @@ import {
   customerView,
   formatClock,
   isWaiting,
+  nextPendingAlert,
   parseOrderLink,
   shouldAlert,
   shouldKeepAwake,
@@ -19,16 +20,10 @@ import {
   type CustomerSnapshot,
   type CustomerStatus,
 } from '../lib/domain/customerView';
-import { isChimeRunning, keepAwake, playChime, releaseAwake, resumeChime, unlockChime } from './chime';
+import { chimeDebug, chimeLog, isChimeRunning, isVoiceReady, log, playChime, playChimeNow, resumeChime, setKeepAwake, syncAwake, unlockChime } from './chime';
 import styles from './CustomerApp.module.css';
 
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
-
-/** できあがりを知らせる（音・振動）。音は、ボタンをタップしたあとだけ鳴る（playChime は、タップの前は何もしない） */
-function alertReady() {
-  navigator.vibrate?.([200, 100, 200]); // 対応する端末のみ（iPhone は非対応）
-  void playChime();
-}
 
 export function CustomerApp() {
   // 不正なリンク（QRの読み違い・URLの改変）は、購読しない
@@ -38,11 +33,16 @@ export function CustomerApp() {
   const [waitedMs, setWaitedMs] = useState(0);
   const [startedAt] = useState(Date.now); // 開いた時刻（読み込みの待ちの起点）
   const [lastOrder, setLastOrder] = useState<CustomerOrder | null>(null);
-  // 音のお知らせ（#57）：armed ＝ このページで、ボタンをタップした。audioRunning ＝ いま音を鳴らせる
+  // 音のお知らせ（#57）：armed ＝ このページで、ボタンをタップした。audioRunning ＝ いま音を鳴らせる。voiceReady ＝ 声を読み込めた
   const [armed, setArmed] = useState(false);
+  const armedRef = useRef(false); // 購読のコールバックから読むため
   const [audioRunning, setAudioRunning] = useState(false);
-  // 裏に回っている間に、できあがりになった。表示に戻ったときに、もう一度知らせる（裏では、音・振動が届かないことがあるため）
-  const missedRef = useRef(false);
+  const [noAudio, setNoAudio] = useState(false); // Web Audio が使えない端末（ボタンを出し続けない）
+  const [voiceReady, setVoiceReady] = useState(false);
+  // まだ鳴らせていない、できあがりの知らせ（声の読み込み待ち・裏に回っている間・音の再開待ち）。鳴らせたら消す
+  const [pending, setPending] = useState(false);
+  const [visible, setVisible] = useState(document.visibilityState === 'visible');
+  const [, setLogTick] = useState(0); // ?debug の記録を、描き直すため
 
   useEffect(() => {
     if (!link) return;
@@ -51,13 +51,12 @@ export function CustomerApp() {
       setSnapshot(s);
       setUpdatedAt(new Date());
       if (s.kind === 'doc' && s.order) {
-        // 「できあがり」に変わった瞬間だけ知らせる
-        if (shouldAlert(prev, s.order.status)) {
-          alertReady();
-          if (document.visibilityState === 'hidden') missedRef.current = true;
-        }
-        if (s.order.status !== 'ready') missedRef.current = false;
-        prev = s.order.status;
+        const next = s.order.status;
+        // 「できあがり」に変わった瞬間だけ知らせる。声は、下の effect が鳴らす（タップのあとだけ）
+        if (shouldAlert(prev, next) && !armedRef.current) navigator.vibrate?.([200, 100, 200]); // 対応する端末のみ（iPhone は非対応）
+        const from = prev;
+        setPending((p) => nextPendingAlert(p, from, next));
+        prev = next;
         setLastOrder(s.order); // エラーのあとも、カードを残すため
       }
     });
@@ -76,36 +75,47 @@ export function CustomerApp() {
 
   // 画面を消えなくする（タップのあと、調理中・できあがりの間だけ）。対応していない端末では、何もしない
   const awake = shouldKeepAwake(status, armed);
-  useEffect(() => {
-    if (awake) void keepAwake();
-    else releaseAwake();
-  }, [awake]);
+  useEffect(() => setKeepAwake(awake), [awake]);
 
-  // ホームに戻って、また開いたとき：画面を消えなくするのを取り直し、音を再開する。再開できなければ、ボタンを、もう一度出す
-  useEffect(() => {
-    if (!armed) return;
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (awake) void keepAwake();
-      void resumeChime().then((running) => {
-        setAudioRunning(running);
-        if (missedRef.current) {
-          missedRef.current = false;
-          alertReady();
-        }
-      });
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [armed, awake]);
-
-  // ボタンのタップ：音を鳴らせる状態にし（聞こえる音は鳴らさない）、画面を消えなくする。Android の振動も、このタップで効くようになる
-  const onArm = () => {
-    unlockChime(setAudioRunning);
+  // 音の状態が変わったとき（chime.ts から）
+  const onChimeChange = () => {
     setAudioRunning(isChimeRunning());
+    setVoiceReady(isVoiceReady());
+    setLogTick((n) => n + 1);
+  };
+
+  // まだ鳴らせていない知らせがあれば、鳴らす。鳴らせなければ、声の読み込み・音の再開・表示に戻る、のどれかが変わったときに、もう一度
+  useEffect(() => {
+    if (!pending || !armed) return;
+    void playChime().then((played) => played && setPending(false));
+  }, [pending, armed, audioRunning, voiceReady, visible]);
+
+  // ホームに戻って、また開いたとき：画面を消えなくするのを取り直し、音を再開する。
+  // 再開できなければ（iPhone は、タップしないと、終わらないことがある。上限1.5秒）、ボタン「音をオンにし直す」を出す
+  useEffect(() => {
+    const onVisibility = () => {
+      const isVisible = document.visibilityState === 'visible';
+      setVisible(isVisible);
+      if (!armedRef.current) return;
+      log(isVisible ? 'visible' : 'hidden');
+      if (!isVisible) return;
+      syncAwake();
+      void resumeChime().then(setAudioRunning);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  // ボタンのタップ：音を鳴らせる状態にする（聞こえる音は鳴らさない）。まだ鳴らせていない知らせがあれば、その場で鳴らす。
+  // 画面を消えなくする。Android の振動も、このタップで効くようになる
+  const onArm = () => {
+    const ok = unlockChime(onChimeChange);
+    setNoAudio(!ok);
+    armedRef.current = true;
     setArmed(true);
-    navigator.vibrate?.(100);
-    void keepAwake();
+    if (pending && playChimeNow()) setPending(false);
+    setKeepAwake(shouldKeepAwake(status, true));
+    onChimeChange();
   };
 
   // タブの題名にも、番号と状況を出す（ほかのアプリに切り替えても、分かるように）
@@ -136,8 +146,13 @@ export function CustomerApp() {
             電波の良い場所で、もう一度開いてください
           </Notice>
         ) : view?.state === 'active' ? (
-          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} chime={chimeButton(view.order.status, armed, audioRunning)} onArm={onArm} />
+          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} chime={chimeButton(view.order.status, armed, audioRunning || noAudio, pending)} onArm={onArm} />
         ) : null}
+        {chimeDebug && (
+          <pre class={styles.debug}>
+            {`armed=${armed} running=${audioRunning} voice=${voiceReady} pending=${pending} visible=${visible}\n${chimeLog.join('\n')}`}
+          </pre>
+        )}
       </main>
     </>
   );

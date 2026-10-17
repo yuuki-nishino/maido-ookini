@@ -56,18 +56,30 @@ export function shouldAlert(prev: CustomerStatus | null, next: CustomerStatus): 
 }
 
 /**
+ * まだ鳴らせていない、できあがりの知らせがあるか（#57）。調理中 → できあがりで立て、鳴らせたら（呼んだ側で）消す。
+ * できあがりでなくなったら（お渡し済み・調理中に戻す）、消す。声の読み込み待ち・裏に回っている間・音の再開待ちのあいだ、残る
+ */
+export function nextPendingAlert(pending: boolean, prev: CustomerStatus | null, next: CustomerStatus): boolean {
+  if (shouldAlert(prev, next)) return true;
+  return next === 'ready' && pending;
+}
+
+/**
  * 音のお知らせのボタン（screens.md §4.2、#57）。ブラウザは、一度もタップされていないページでは、音を鳴らせないため、タップしてもらう
- * - arm：まだタップされていない →「できあがりを音で知らせる」
- * - retry：タップされたが、音を鳴らせない状態に戻った（ホームに戻ったあと、再開できなかったなど）→「音をオンにし直す」
- * - armed：鳴らせる →「音でお知らせします」（ボタンではなく、表示だけ）
- * - null：出さない（調理中のときだけ出す。できあがり・お渡し済み・取り消しでは、もう鳴らすことがない）
+ * - arm：調理中で、まだタップされていない →「できあがりを音で知らせる」
+ * - retry：タップのあと、音を鳴らせない状態に戻った（ホームに戻ったあと、再開できなかったなど）→「音をオンにし直す」。
+ *   調理中のときと、できあがりで、まだ鳴らせていない知らせ（pending）があるとき（タップで、すぐ鳴らす）
+ * - armed：調理中で、鳴らせる →「音でお知らせします」（ボタンではなく、表示だけ）
+ * - null：出さない
  */
 export type ChimeButton = 'arm' | 'retry' | 'armed' | null;
 
-export function chimeButton(status: CustomerStatus, armed: boolean, audioRunning: boolean): ChimeButton {
-  if (status !== 'preparing') return null;
-  if (!armed) return 'arm';
-  return audioRunning ? 'armed' : 'retry';
+export function chimeButton(status: CustomerStatus, armed: boolean, audioRunning: boolean, pending = false): ChimeButton {
+  if (status === 'preparing') {
+    if (!armed) return 'arm';
+    return audioRunning ? 'armed' : 'retry';
+  }
+  return status === 'ready' && armed && !audioRunning && pending ? 'retry' : null;
 }
 
 /** 画面を消えないようにしておくか（Screen Wake Lock）。タップのあと、調理中・できあがりの間だけ（お渡し済み・取り消しでは、電池のため、外す） */
