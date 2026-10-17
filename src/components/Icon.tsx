@@ -14,7 +14,7 @@ const PATHS = {
 
 export type IconName = keyof typeof PATHS;
 
-/** 塗りつぶす形（中は黄色、輪郭は文字の色）。ベルは、線だけだと細く見えるため、塗る（#62 の実機の確認） */
+/** 塗りつぶす形（黄色）。ベルは、線だけだと細く見えるため、塗る（#62 の実機の確認） */
 const FILLED: ReadonlySet<IconName> = new Set(['bell']);
 
 /** アイコン＋文字。行の真ん中にそろえて並べる */
@@ -29,7 +29,7 @@ export function IconLabel({ icon, children }: { icon: IconName; children: Compon
 
 export function Icon({ name }: { name: IconName }) {
   return (
-    <svg class={`${styles.icon} ${FILLED.has(name) ? styles.filled : ''}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg class={`${styles.icon} ${styles[name]} ${FILLED.has(name) ? styles.filled : ''}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {PATHS[name].map((d) => (
         <path key={d} d={d} />
       ))}

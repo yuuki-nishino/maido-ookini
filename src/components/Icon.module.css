@@ -24,7 +24,17 @@
   vertical-align: 0;
 }
 
-/* 塗りつぶす形（ベル）。中は黄色、輪郭は文字の色（ボタンの上では白） */
+/* 形ごとに、見た目の重心が違うため、高さを少しずつ直す（実機の確認） */
+.label > .bell {
+  margin-top: 0.26em; /* 下が重い形（玉）のため、少し下げる */
+}
+
+.label > .alert {
+  margin-top: 0.12em; /* 三角は下が広く、低く見えるため、少し上げる */
+}
+
+/* 塗りつぶす形（ベル）。輪郭も中も黄色 */
 .filled {
   fill: var(--color-bell);
+  stroke: var(--color-bell);
 }
