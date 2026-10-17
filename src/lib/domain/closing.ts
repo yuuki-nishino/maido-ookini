@@ -71,7 +71,7 @@ export const COUNT_MAX = 9999;
 
 /** 枚数の入力：0〜9,999 の整数（全角数字を受け付ける）。空は 0。不正なら null */
 export function parseCount(input: string): number | null {
-  const text = input.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/\s/g, '').replace(/枚$/, '');
+  const text = input.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).trim().replace(/枚$/, '');
   if (text === '') return 0;
   if (!/^\d+$/.test(text)) return null;
   const n = Number(text);

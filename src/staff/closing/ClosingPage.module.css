@@ -156,7 +156,7 @@
 /* 1行：金額｜枚数の入力｜枚｜小計 */
 .countRow {
   display: grid;
-  grid-template-columns: 5.5em 5em auto 1fr;
+  grid-template-columns: auto 4.5em auto minmax(0, 1fr); /* 小計の列は、中身より狭くできる（狭い画面で、はみ出さない。レビュー 1） */
   align-items: center;
   gap: var(--sp-2);
   font-variant-numeric: tabular-nums;
@@ -188,6 +188,7 @@
 
 .countSubtotal {
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .countError {

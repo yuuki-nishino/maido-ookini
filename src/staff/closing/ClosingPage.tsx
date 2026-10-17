@@ -1,8 +1,9 @@
 // レジ締め（screens.md §3.7、SPEC 6.4）。日付ごとに、準備金・あるはずの現金・数えた現金・差額を確かめ、記録する。
 // サーバーの確かな値（fetchOrdersOfDayFromServer・getClosing）でだけ行う。オフラインのときは、集計を出さず、「締める」を無効にする
 import type { TargetedEvent } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { DaySelector } from '../../components/DaySelector';
 import { Loading } from '../../components/Feedback';
 import { TextField } from '../../components/TextField';
@@ -272,7 +273,7 @@ export function ClosingPage({ eventId, uid }: { eventId: string; uid: string }) 
               <span>
                 {diff === null ? '差額' : diffKind(diff) === 'match' ? '差額：一致' : diffKind(diff) === 'short' ? '差額：不足' : '差額：多い'}
               </span>
-              <span>{diff === null ? '数えた現金を入れてください' : formatYen(Math.abs(diff))}</span>
+              <span>{diff === null ? (count.used ? '枚数を確かめてください' : '数えた現金を入れてください') : formatYen(Math.abs(diff))}</span>
             </div>
 
             {saveError && (
@@ -298,13 +299,16 @@ export function ClosingPage({ eventId, uid }: { eventId: string; uid: string }) 
 type CashCountPanelProps = { counts: CashCounts; view: CashCountView; onChange: (d: Denomination, text: string) => void; onClear: () => void };
 
 function CashCountPanel({ counts, view, onChange, onClear }: CashCountPanelProps) {
+  const idBase = useId();
+  // 数えた途中で押し間違えると、全部消えるため、確かめる（レビュー 2）
+  const [confirmClear, setConfirmClear] = useState(false);
   return (
     <fieldset class={styles.count}>
       <legend class={styles.countLegend}>枚数で数える（任意）</legend>
       <p class={styles.hint}>入れると、数えた現金を自動で計算します</p>
       <ul class={styles.countList}>
         {view.lines.map((l) => {
-          const id = `count-${l.denomination}`;
+          const id = `${idBase}-${l.denomination}`;
           return (
             <li key={l.denomination} class={styles.countRow}>
               <label for={id} class={styles.countLabel}>
@@ -340,11 +344,24 @@ function CashCountPanel({ counts, view, onChange, onClear }: CashCountPanelProps
           <span>
             合計 <strong>{view.total !== null ? formatYen(view.total) : '—'}</strong>
           </span>
-          <Button variant="secondary" onClick={onClear}>
+          <Button variant="secondary" onClick={() => setConfirmClear(true)}>
             枚数を消す
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmClear}
+        title="入れた枚数を、すべて消しますか？"
+        confirmLabel="消す"
+        danger
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          onClear();
+        }}
+      >
+        数えた現金は、手で入れる形に戻ります。
+      </ConfirmDialog>
     </fieldset>
   );
 }

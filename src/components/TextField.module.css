@@ -18,6 +18,13 @@
   font-size: var(--fs-md); /* 16px 未満だと、iPhone が入力時に拡大する */
 }
 
+/* 読み取り専用（計算した値を見せる欄。#64）：地の色にして、入力できる欄と見分ける */
+.input:read-only {
+  border-width: 1px;
+  border-color: var(--color-line);
+  background: var(--color-bg);
+}
+
 .input::placeholder {
   color: var(--color-ink-sub);
 }

@@ -78,7 +78,10 @@ describe('parseCount（枚数。#64）', () => {
     ['5枚', 5],
     [String(COUNT_MAX), COUNT_MAX],
   ])('%s → %d', (s, v) => expect(parseCount(s)).toBe(v));
-  it.each(['-1', '1.5', 'abc', '1,000', String(COUNT_MAX + 1)])('%s は拒否', (s) => expect(parseCount(s)).toBeNull());
+  it.each(['-1', '1.5', 'abc', '1,000', '1 2', String(COUNT_MAX + 1)])('%s は拒否', (s) => expect(parseCount(s)).toBeNull());
+  it('前後の空白（全角も）は、消す', () => {
+    expect(parseCount('\u3000７\u3000')).toBe(7);
+  });
 });
 
 describe('cashCountView（枚数から、数えた現金を出す。#64）', () => {
@@ -96,6 +99,9 @@ describe('cashCountView（枚数から、数えた現金を出す。#64）', () 
   });
   it('0枚だけでも、使っている（合計 0）', () => {
     expect(cashCountView({ 100: '0' })).toMatchObject({ used: true, total: 0 });
+  });
+  it('空白だけの行と、不正な行が混ざる → 使っている・合計は null', () => {
+    expect(cashCountView({ 100: ' ', 1000: 'x' })).toMatchObject({ used: true, total: null });
   });
   it('不正な行があれば、合計は null（その行の小計も null）', () => {
     const v = cashCountView({ 1000: '3', 100: 'x' });
