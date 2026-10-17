@@ -129,11 +129,27 @@
 }
 
 .leaveNote {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+  border: 3px solid var(--status-cooking-fg);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.leaveNoteTitle {
   margin: 0;
-  color: var(--color-ink-sub);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-lg);
+  font-weight: 800;
   line-height: var(--lh-tight);
-  text-align: center;
+}
+
+.leaveNoteText {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  line-height: var(--lh-tight);
 }
 
 .chimeOn {

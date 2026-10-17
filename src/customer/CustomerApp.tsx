@@ -202,6 +202,15 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
         )}
       </section>
 
+      {/* 画面を離れると、音は鳴らない（iPhone。screens.md §4.2）。音で知らせてもらえると思って、離れないように（#62）。
+          読みそびれないよう、囲みにして、ボタンの上（タップの前に目に入る位置）に出す */}
+      {order.status === 'preparing' && (
+        <div class={styles.leaveNote}>
+          <p class={styles.leaveNoteTitle}>📱 この画面を開いたままにしてください</p>
+          <p class={styles.leaveNoteText}>ほかのアプリやホーム画面に移ると、音は鳴りません。ときどき、この画面を見てください</p>
+        </div>
+      )}
+
       {chime === 'armed' ? (
         <p class={styles.chimeOn} role="status">
           🔔 できあがりを、音でお知らせします
@@ -212,8 +221,6 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
           <span class={styles.chimeSub}>タップしてください（音量を上げておいてください）</span>
         </button>
       ) : null}
-      {/* 画面を離れると、音は鳴らない（iPhone。screens.md §4.2）。音で知らせてもらえると思って、離れないように（#62） */}
-      {order.status === 'preparing' && <p class={styles.leaveNote}>⚠ ほかのアプリやホーム画面に移ると、音は鳴りません。ときどき、この画面を見てください</p>}
 
       <section class={styles.detail} aria-label="ご注文の内容">
         <ul class={styles.items}>
