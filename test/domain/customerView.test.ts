@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   chimeButton,
   shouldRecall,
+  showLeaveNote,
   showRecallNotice,
   nextPendingAlert,
   CUSTOMER_STATUS_TEXT,
@@ -138,6 +139,17 @@ describe('nextPendingAlert（まだ鳴らせていない知らせ。#57・#58）
     expect(nextPendingAlert(1, pt('ready'), pt('done'), 2)).toBeNull();
     expect(nextPendingAlert(1, pt('ready'), pt('preparing'), 2)).toBeNull();
     expect(nextPendingAlert(1, pt('ready'), pt('cancelled'), 2)).toBeNull();
+  });
+});
+
+describe('showLeaveNote（画面を開いているときだけ鳴る、の囲み。#62）', () => {
+  it('調理中だけ出す', () => {
+    expect(showLeaveNote('preparing')).toBe(true);
+  });
+  it('できあがり・お渡し済み・取り消しでは、出さない（もう待つ必要が無い）', () => {
+    expect(showLeaveNote('ready')).toBe(false);
+    expect(showLeaveNote('done')).toBe(false);
+    expect(showLeaveNote('cancelled')).toBe(false);
   });
 });
 

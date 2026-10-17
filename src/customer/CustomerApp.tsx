@@ -17,6 +17,7 @@ import {
   shouldAlert,
   shouldKeepAwake,
   shouldRecall,
+  showLeaveNote,
   showRecallNotice,
   type AlertPoint,
   startWaitTicker,
@@ -216,7 +217,7 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
 
       {/* 画面を離れると、音は鳴らない（iPhone。screens.md §4.2）。音で知らせてもらえると思って、気づけないことがないように（#62）。
           読みそびれないよう、囲みにする。音のボタンの下（ボタン → 注意事項、の順に読む） */}
-      {order.status === 'preparing' && (
+      {showLeaveNote(order.status) && (
         <div class={styles.leaveNote}>
           <p class={styles.leaveNoteTitle}>
             <IconLabel icon="alert">音でお知らせできるのは、この画面を開いているときだけです</IconLabel>

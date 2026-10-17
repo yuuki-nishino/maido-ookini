@@ -1,4 +1,4 @@
-// アイコン（visual.md §3）。絵文字の代わりに、線で描く小さな SVG。文字の色（currentColor）と大きさ（1em）に合わせる。
+// アイコン（visual.md §3）。絵文字の代わりに、線で描く小さな SVG。文字の色（currentColor）と大きさ（1.15em）に合わせる。
 // 外部のアイコン集は使わない（お客様画面の軽さのため。必要な形だけを、ここに描く）。飾りなので、読み上げない（aria-hidden）
 import type { ComponentChildren } from 'preact';
 import styles from './Icon.module.css';
@@ -17,7 +17,7 @@ export type IconName = keyof typeof PATHS;
 /** 塗りつぶす形（黄色）。ベルは、線だけだと細く見えるため、塗る（#62 の実機の確認） */
 const FILLED: ReadonlySet<IconName> = new Set(['bell']);
 
-/** アイコン＋文字。行の真ん中にそろえて並べる */
+/** アイコン＋文字。文字が2行以上になっても、アイコンは1行目にそろえる */
 export function IconLabel({ icon, children }: { icon: IconName; children: ComponentChildren }) {
   return (
     <span class={styles.label}>
@@ -29,7 +29,7 @@ export function IconLabel({ icon, children }: { icon: IconName; children: Compon
 
 export function Icon({ name }: { name: IconName }) {
   return (
-    <svg class={`${styles.icon} ${styles[name]} ${FILLED.has(name) ? styles.filled : ''}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg class={[styles.icon, styles[name], FILLED.has(name) && styles.filled].filter(Boolean).join(' ')} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {PATHS[name].map((d) => (
         <path key={d} d={d} />
       ))}

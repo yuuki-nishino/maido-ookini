@@ -102,6 +102,11 @@ export function chimeButton(status: CustomerStatus, armed: boolean, audioRunning
   return status === 'ready' && armed && !audioRunning && pending ? 'retry' : null;
 }
 
+/** 「画面を開いているときだけ鳴る」の囲みを出すか（#62）。調理中だけ（できあがり以降は、もう待つ必要が無い） */
+export function showLeaveNote(status: CustomerStatus): boolean {
+  return status === 'preparing';
+}
+
 /** 画面を消えないようにしておくか（Screen Wake Lock）。タップのあと、調理中・できあがりの間だけ（お渡し済み・取り消しでは、電池のため、外す） */
 export function shouldKeepAwake(status: CustomerStatus | null, armed: boolean): boolean {
   return armed && (status === 'preparing' || status === 'ready');
