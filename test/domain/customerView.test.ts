@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   chimeButton,
+  shouldRecall,
+  showRecallNotice,
   nextPendingAlert,
   CUSTOMER_STATUS_TEXT,
   customerView,
@@ -16,7 +18,7 @@ import {
   type CustomerOrder,
 } from '../../src/lib/domain/customerView';
 
-const order: CustomerOrder = { number: 7, status: 'preparing', items: [{ name: '焼きそば', price: 500, qty: 2 }], total: 1000 };
+const order: CustomerOrder = { number: 7, status: 'preparing', items: [{ name: '焼きそば', price: 500, qty: 2 }], total: 1000, calls: 0 };
 
 describe('customerView', () => {
   it('まだ何も届いていない → loading。8秒続いたら slow（「通信が不安定です」を添える）', () => {
@@ -50,7 +52,7 @@ describe('customerView', () => {
 
   it('お客様に渡す注文の型には、支払い方法・メモ・スタッフの情報が無い', () => {
     const keys = Object.keys(order).sort();
-    expect(keys).toEqual(['items', 'number', 'status', 'total']);
+    expect(keys).toEqual(['calls', 'items', 'number', 'status', 'total']);
   });
 });
 
@@ -100,21 +102,53 @@ describe('chimeButton（音のお知らせのボタン。#57）', () => {
   });
 });
 
-describe('nextPendingAlert（まだ鳴らせていない、できあがりの知らせ。#57）', () => {
-  it('調理中 → できあがりで、立てる', () => {
-    expect(nextPendingAlert(false, 'preparing', 'ready')).toBe(true);
+const pt = (status: CustomerOrder['status'], calls = 0) => ({ status, calls });
+
+describe('shouldRecall（お店の「もう一度呼ぶ」。#58）', () => {
+  it('できあがりのまま、calls が増えたら、知らせる', () => {
+    expect(shouldRecall(pt('ready', 0), pt('ready', 1))).toBe(true);
+    expect(shouldRecall(pt('ready', 2), pt('ready', 3))).toBe(true);
+  });
+  it('最初の表示（開き直したとき）では、知らせない', () => {
+    expect(shouldRecall(null, pt('ready', 3))).toBe(false);
+  });
+  it('calls が変わらない・できあがりでないときは、知らせない', () => {
+    expect(shouldRecall(pt('ready', 1), pt('ready', 1))).toBe(false);
+    expect(shouldRecall(pt('preparing', 0), pt('ready', 1))).toBe(false); // 調理中 → できあがりは shouldAlert の側
+    expect(shouldRecall(pt('ready', 1), pt('done', 2))).toBe(false);
+  });
+});
+
+describe('nextPendingAlert（まだ鳴らせていない知らせ。#57・#58）', () => {
+  it('調理中 → できあがりで、新しい知らせ（id）にする', () => {
+    expect(nextPendingAlert(null, pt('preparing'), pt('ready'), 1)).toBe(1);
+  });
+  it('「もう一度呼ぶ」で、新しい知らせにする（鳴らせていない知らせがあっても、置き換える）', () => {
+    expect(nextPendingAlert(null, pt('ready', 0), pt('ready', 1), 2)).toBe(2);
+    expect(nextPendingAlert(1, pt('ready', 0), pt('ready', 1), 2)).toBe(2);
   });
   it('最初の表示（できあがりの注文を、あとから開いた）では、立てない', () => {
-    expect(nextPendingAlert(false, null, 'ready')).toBe(false);
+    expect(nextPendingAlert(null, null, pt('ready', 2), 1)).toBeNull();
   });
-  it('できあがりのままなら、残す（声の読み込み待ち・裏に回っている・再開待ち）。鳴らせて消したあとは、消えたまま', () => {
-    expect(nextPendingAlert(true, 'ready', 'ready')).toBe(true);
-    expect(nextPendingAlert(false, 'ready', 'ready')).toBe(false);
+  it('できあがりのままなら、残す。鳴らせて消したあとは、消えたまま', () => {
+    expect(nextPendingAlert(1, pt('ready'), pt('ready'), 2)).toBe(1);
+    expect(nextPendingAlert(null, pt('ready'), pt('ready'), 2)).toBeNull();
   });
   it('できあがりでなくなったら、消す（お渡し済み・調理中に戻す・取り消し）', () => {
-    expect(nextPendingAlert(true, 'ready', 'done')).toBe(false);
-    expect(nextPendingAlert(true, 'ready', 'preparing')).toBe(false);
-    expect(nextPendingAlert(true, 'ready', 'cancelled')).toBe(false);
+    expect(nextPendingAlert(1, pt('ready'), pt('done'), 2)).toBeNull();
+    expect(nextPendingAlert(1, pt('ready'), pt('preparing'), 2)).toBeNull();
+    expect(nextPendingAlert(1, pt('ready'), pt('cancelled'), 2)).toBeNull();
+  });
+});
+
+describe('showRecallNotice（「お店からお呼びしています」。#58）', () => {
+  it('呼ばれていて（30秒は、呼んだ側のタイマーが消す）、できあがりのままなら出す', () => {
+    expect(showRecallNotice(1000, 'ready')).toBe(true);
+  });
+  it('呼ばれていない・できあがりでないときは、出さない', () => {
+    expect(showRecallNotice(null, 'ready')).toBe(false);
+    expect(showRecallNotice(1000, 'done')).toBe(false);
+    expect(showRecallNotice(1000, null)).toBe(false);
   });
 });
 

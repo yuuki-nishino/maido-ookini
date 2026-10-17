@@ -8,6 +8,8 @@ export interface CustomerOrder {
   status: CustomerStatus;
   items: { name: string; price: number; qty: number }[];
   total: number;
+  /** お店が「もう一度呼ぶ」を押した回数（#58。無い注文は 0） */
+  calls: number;
 }
 
 /** 購読から届いたもの。まだ何も届いていなければ、判定の入力には、null を渡す */
@@ -55,13 +57,31 @@ export function shouldAlert(prev: CustomerStatus | null, next: CustomerStatus): 
   return prev === 'preparing' && next === 'ready';
 }
 
+/** お客様画面の知らせの判定に使う、注文の状態（#58） */
+export type AlertPoint = Pick<CustomerOrder, 'status' | 'calls'>;
+
+/** お店が「もう一度呼ぶ」を押した（できあがりのまま、calls が増えた）。最初の表示（prev が null）では、しない（#58） */
+export function shouldRecall(prev: AlertPoint | null, next: AlertPoint): boolean {
+  return prev !== null && prev.status === 'ready' && next.status === 'ready' && next.calls > prev.calls;
+}
+
 /**
- * まだ鳴らせていない、できあがりの知らせがあるか（#57）。調理中 → できあがりで立て、鳴らせたら（呼んだ側で）消す。
- * できあがりでなくなったら（お渡し済み・調理中に戻す）、消す。声の読み込み待ち・裏に回っている間・拒否からの、タップのし直し待ちのあいだ、残る
+ * まだ鳴らせていない知らせ（#57・#58）。知らせごとの番号（id）を持ち、同じ知らせは、二度鳴らさない（鳴らせたら、呼んだ側で null にする）。
+ * - 調理中 → できあがり、または「もう一度呼ぶ」で、新しい知らせ（id）にする
+ * - できあがりでなくなったら（お渡し済み・調理中に戻す・取り消し）、null
+ * - それ以外は、そのまま（声の読み込み待ち・裏に回っている間・拒否からの、タップのし直し待ちのあいだ、残る）
  */
-export function nextPendingAlert(pending: boolean, prev: CustomerStatus | null, next: CustomerStatus): boolean {
-  if (shouldAlert(prev, next)) return true;
-  return next === 'ready' && pending;
+export function nextPendingAlert(pending: number | null, prev: AlertPoint | null, next: AlertPoint, id: number): number | null {
+  if (shouldAlert(prev?.status ?? null, next.status) || shouldRecall(prev, next)) return id;
+  return next.status === 'ready' ? pending : null;
+}
+
+/** 「お店からお呼びしています」を出す時間（#58）。呼ばれてから、この間、できあがりのままなら出す */
+export const RECALL_NOTICE_MS = 30_000;
+
+/** recalledAt は、呼ばれた時刻。RECALL_NOTICE_MS が過ぎたら、呼んだ側（タイマー）で null にする */
+export function showRecallNotice(recalledAt: number | null, status: CustomerStatus | null): boolean {
+  return recalledAt !== null && status === 'ready';
 }
 
 /**

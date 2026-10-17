@@ -8,6 +8,7 @@ import {
   onSnapshot,
   query,
   runTransaction,
+  increment,
   serverTimestamp,
   updateDoc,
   where,
@@ -43,6 +44,7 @@ export function toOrder(snap: DocumentSnapshot): Order {
     payment: d.payment,
     note: typeof d.note === 'string' ? d.note : '', // 無い注文（#40 より前）は、空
     status: d.status,
+    calls: typeof d.calls === 'number' ? d.calls : 0, // 無い注文（#58 より前・まだ呼んでいない）は 0
     cancelledFrom: d.cancelledFrom ?? null,
     qr: d.qr === true,
     createdAt: toDate(d.createdAt),
@@ -128,6 +130,7 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       payment,
       note,
       status: qr ? 'preparing' : 'done',
+      calls: 0,
       cancelledFrom: null,
       qr,
       createdAt: null,
@@ -271,6 +274,17 @@ export function changePayment(eventId: string, orderId: string, payment: Payment
 export function changeNote(eventId: string, orderId: string, note: string, uid: string): Promise<void> {
   if (note.length > NOTE_MAX) return Promise.reject(validationError(`メモは${NOTE_MAX}文字までです`));
   return updateDoc(doc(ordersCol(eventId), orderId), { note, updatedBy: uid, updatedAt: serverTimestamp() }).catch((e: unknown) => {
+    throw toAppError(e);
+  });
+}
+
+/**
+ * もう一度呼ぶ（#58）。できあがりの注文の `calls` を1増やす（お客様画面が、増えたのを見て、声を鳴らす）。状態は変えない。
+ * できあがりでなければ、ルールが拒否する（書く前にも確かめる）。オンラインのときだけ押せるようにするのは、呼ぶ画面の役目
+ */
+export function recallOrder(eventId: string, order: Order, uid: string): Promise<void> {
+  if (order.status !== 'ready') return Promise.reject(validationError('できあがりの注文だけ、呼び直せます'));
+  return updateDoc(doc(ordersCol(eventId), order.id), { calls: increment(1), updatedBy: uid, updatedAt: serverTimestamp() }).catch((e: unknown) => {
     throw toAppError(e);
   });
 }

@@ -81,7 +81,7 @@ describe('watchOrder（お客様）', () => {
     const snap = await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order));
     w.unsub();
     const order = snap.kind === 'doc' ? snap.order : null;
-    expect(Object.keys(order!).sort()).toEqual(['items', 'number', 'status', 'total']);
+    expect(Object.keys(order!).sort()).toEqual(['calls', 'items', 'number', 'status', 'total']);
     expect(JSON.stringify(snap)).not.toMatch(/paypay|辛さ抜き|staff-uid/);
   });
 
@@ -93,6 +93,22 @@ describe('watchOrder（お客様）', () => {
     const ready = await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order?.status === 'ready'));
     w.unsub();
     expect(ready.kind === 'doc' && ready.order?.status).toBe('ready');
+  });
+
+  it('お店の「もう一度呼ぶ」（calls が増える）が届き、shouldRecall で、知らせる判断ができる（#58）', async () => {
+    const { shouldRecall } = await import('../../src/lib/domain/customerView');
+    await setStatus('ready');
+    setCustomer();
+    const w = watch('e1', 'o1');
+    const first = await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order?.status === 'ready' && !s.fromCache));
+    expect(first.kind === 'doc' && first.order?.calls).toBe(0);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('events/e1/orders/o1').update({ calls: 1 });
+    });
+    const called = await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order?.calls === 1));
+    w.unsub();
+    if (first.kind !== 'doc' || called.kind !== 'doc' || !first.order || !called.order) throw new Error('unreachable');
+    expect(shouldRecall(first.order, called.order)).toBe(true);
   });
 
   it('存在しない注文は、サーバーの結果（fromCache = false）で notFound になる', async () => {

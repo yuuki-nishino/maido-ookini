@@ -165,3 +165,16 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* もう一度呼ぶ（#58） */
+.recall {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.recallCount {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--color-ink-sub);
+  text-align: center;
+}

@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -14,7 +15,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ALICE, anon, as, BOB, CAROL, createEnv, DAY, dbOf, orderItems, OWNER, seed, storedOrder } from './helpers';
+import { ALICE, anon, as, BOB, CAROL, createEnv, DAY, dbOf, hoursAgo, orderItems, OWNER, seed, storedOrder } from './helpers';
 
 let env: RulesTestEnvironment;
 beforeAll(async () => {
@@ -398,6 +399,77 @@ describe('注文の更新', () => {
     await assertFails(updateDoc(doc(as(env, BOB), 'events/e1/orders/o1'), upd(BOB, { payment: 'paypay' })));
     await assertFails(updateDoc(doc(as(env, CAROL), 'events/e1/orders/o1'), upd(CAROL, { payment: 'paypay' })));
     await assertFails(updateDoc(doc(anon(env), 'events/e1/orders/o1'), { payment: 'paypay' }));
+  });
+});
+
+describe('もう一度呼ぶ（#58）：できあがりの注文の calls を、1だけ増やす', () => {
+  const recall = (uid: string, calls: unknown, patch: Record<string, unknown> = {}) => ({
+    calls,
+    updatedBy: uid,
+    updatedAt: serverTimestamp(),
+    ...patch,
+  });
+  async function seedOrder(id: string, patch: Record<string, unknown>) {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(dbOf(ctx), 'events/e1/orders', id), storedOrder(patch));
+    });
+  }
+  beforeEach(() => seedOrder('r1', { status: 'ready', readyAt: hoursAgo(0.1) }));
+  const r1 = (uid: string) => doc(as(env, uid), 'events/e1/orders/r1');
+
+  it('calls の無い注文を、increment(1) で 1 にでき、続けて 2 にできる', async () => {
+    await assertSucceeds(updateDoc(r1(ALICE), recall(ALICE, increment(1))));
+    await assertSucceeds(updateDoc(r1(ALICE), recall(ALICE, increment(1))));
+    let calls: unknown;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      calls = (await getDoc(doc(dbOf(ctx), 'events/e1/orders/r1'))).data()?.calls;
+    });
+    expect(calls).toBe(2);
+  });
+
+  it('値で書いても、ちょうど +1 なら許可。+2・減らす・数でない値は拒否', async () => {
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, 2)));
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, 0)));
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, '1')));
+    await assertSucceeds(updateDoc(r1(ALICE), recall(ALICE, 1)));
+    // 同じ値（1 → 1）は、calls が変わらないため、ふつうの更新（updatedAt だけ）として通る（害は無い）
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, 0)));
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, 3)));
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, increment(2))));
+  });
+
+  it.each(['preparing', 'done', 'cancelled'])('できあがりでない（%s）注文は、呼べない', async (status) => {
+    await seedOrder('r2', { status, cancelledFrom: status === 'cancelled' ? 'ready' : null });
+    await assertFails(updateDoc(doc(as(env, ALICE), 'events/e1/orders/r2'), recall(ALICE, increment(1))));
+  });
+
+  it('状態・支払い方法・メモと同時には、変えられない', async () => {
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, increment(1), { status: 'done', doneAt: serverTimestamp() })));
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, increment(1), { payment: 'paypay' })));
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, increment(1), { note: 'x' })));
+  });
+
+  it('updatedBy が自分でない・updatedAt がクライアントの時刻なら拒否（R11）', async () => {
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, increment(1), { updatedBy: BOB })));
+    await assertFails(updateDoc(r1(ALICE), recall(ALICE, increment(1), { updatedAt: new Date() })));
+  });
+
+  it('非メンバー・別のイベントのメンバー・未ログインは、呼べない', async () => {
+    await assertFails(updateDoc(r1(BOB), recall(BOB, increment(1))));
+    await assertFails(updateDoc(r1(CAROL), recall(CAROL, increment(1))));
+    await assertFails(updateDoc(doc(anon(env), 'events/e1/orders/r1'), { calls: increment(1) }));
+  });
+
+  it('calls のある注文も、これまでどおり状態を変えられる。状態の変更と一緒に calls を変えるのは拒否', async () => {
+    await seedOrder('r3', { status: 'ready', readyAt: hoursAgo(0.1), calls: 2 });
+    const r3 = doc(as(env, ALICE), 'events/e1/orders/r3');
+    await assertFails(updateDoc(r3, { status: 'done', doneAt: serverTimestamp(), calls: 0, updatedBy: ALICE, updatedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(r3, { status: 'done', doneAt: serverTimestamp(), updatedBy: ALICE, updatedAt: serverTimestamp() }));
+  });
+
+  it('確定（作成）のときに、calls は書けない（無い＝ 0 として読む）', async () => {
+    await assertFails(confirm(as(env, ALICE), 'n1', newOrder(ALICE, 2, true, { calls: 0 }), 2));
+    await assertSucceeds(confirm(as(env, ALICE), 'n2', newOrder(ALICE, 2), 2));
   });
 });
 

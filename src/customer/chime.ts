@@ -1,6 +1,6 @@
 // できあがりの声と、画面を消えなくする仕組み（screens.md §4.2、#57）。
 // ブラウザは、一度もタップされていないページでは、音を鳴らせない。タップの中で unlockChime() を呼んで、<audio> を一度、消音で再生する。
-// 音は、録音した「へい、お待ち！」（AAC・約40KB）。最初の読み込みを重くしないよう、タップのあとに読み込む。
+// 音は、録音した「へい、お待ち！」（AAC・約48KB）。最初の読み込みを重くしないよう、タップのあとに読み込む。
 // Web Audio ではなく <audio> を使う：iPhone は、裏から戻ったあと、AudioContext が 'running' のまま無音になることがあり、
 // 気付けない（実機の確認、#57）。<audio> は、鳴らせなければ play() が失敗するので、ボタン「音をオンにし直す」を出せる
 import voiceUrl from './hei-omachi.m4a?url';
@@ -8,16 +8,19 @@ import voiceUrl from './hei-omachi.m4a?url';
 // Safari 17〜。消音スイッチ（マナーモード）がオンでも、鳴らすため。型定義に無いため、ここで宣言する
 type AudioSessionNavigator = Navigator & { audioSession?: { type: string } };
 
-/** 同じできあがりで、声が重ならないようにする間（裏で鳴らした分と、戻ったときの分など） */
-const REPLAY_GUARD_MS = 5000;
+/**
+ * タップの消音の再生を止めてから、消音を解くまでの間。止めてすぐ解くと、iPhone で、声の頭が一瞬聞こえた。
+ * 鳴らす直前まで解かないと、iPhone の裏で鳴らなかった（#57）。間をあけて解き、両方を避ける（#58 の調査。★A1）
+ */
+const UNMUTE_DELAY_MS = 500;
 
 let el: HTMLAudioElement | null = null;
 let unlocked = false; // タップした（再生の許しを求めた）
 let denied = false; // 直近の再生が、拒否された（NotAllowedError。タップし直しが必要）
 let voiceVersion = 0; // 読み込めた・読み込み直した、たびに増やす（呼んだ側が、鳴らし直すきっかけにする）
 let retryMs = 2000;
-let lastPlayedAt = -Infinity; // 鳴らし始められた時刻
-let playing: Promise<boolean> | null = null; // 鳴らし始める途中の play()
+let lastPlayedId: number | null = null; // 鳴らし始められた知らせの番号（同じ知らせは、二度鳴らさない）
+let playing: { id: number; p: Promise<boolean> } | null = null; // 鳴らし始める途中の play()
 let playGen = 0; // 本当の再生を始めるたびに増やす（消音の unlock が、あとから声を止めないように）
 let notify: () => void = () => {};
 
@@ -64,7 +67,7 @@ function audioEl(): HTMLAudioElement {
  * タップの中で呼ぶ。音を鳴らせる状態にする（聞こえる音は鳴らさない）。onChange は、鳴らせるか・声を読み込めたかが変わったときに呼ばれる。
  * まだ鳴らせていない知らせ（playNow）があれば、消音にせず、そのまま鳴らす
  */
-export function unlockChime(onChange: () => void, playNow = false): void {
+export function unlockChime(onChange: () => void, playNow: number | null = null): void {
   notify = onChange;
   const nav = navigator as AudioSessionNavigator;
   try {
@@ -74,8 +77,8 @@ export function unlockChime(onChange: () => void, playNow = false): void {
   }
   const a = audioEl();
   unlocked = true;
-  if (playNow) {
-    void startVoice();
+  if (playNow !== null) {
+    void startVoice(playNow);
     return;
   }
   // 消音で一度再生して、すぐ止める（タップの中で再生すると、以後、タップなしで鳴らせる）。
@@ -89,6 +92,9 @@ export function unlockChime(onChange: () => void, playNow = false): void {
       if (gen !== playGen) return; // 間に、本当の再生が始まった（止めない）
       a.pause();
       a.currentTime = 0;
+      setTimeout(() => {
+        if (gen === playGen && a.paused) a.muted = false;
+      }, UNMUTE_DELAY_MS);
     },
     (e: unknown) => {
       if (errName(e) === 'NotAllowedError') denied = true; // ボタン「音をオンにし直す」を出す
@@ -108,38 +114,39 @@ export function getVoiceVersion(): number {
 }
 
 /**
- * 声を1回鳴らす。鳴らし始められたら true。タップの前・拒否された・読み込めないときは false（呼んだ側が、あとで、もう一度呼ぶ）。
- * 直前（5秒以内）に鳴らし始めていれば、重ねずに true。鳴らし始める途中なら、その結果を待つ
+ * 知らせ（id）の声を1回鳴らす。鳴らし始められたら true。タップの前・拒否された・読み込めないときは false（呼んだ側が、あとで、もう一度呼ぶ）。
+ * 同じ知らせを、もう鳴らし始めていれば、重ねずに true。鳴らし始める途中なら、その結果を待つ
  */
-export function playChime(): Promise<boolean> {
+export function playChime(id: number): Promise<boolean> {
   if (!unlocked) return Promise.resolve(false);
-  return startVoice();
+  return startVoice(id);
 }
 
-function startVoice(): Promise<boolean> {
-  if (playing) return playing;
-  if (performance.now() - lastPlayedAt < REPLAY_GUARD_MS) return Promise.resolve(true);
+function startVoice(id: number): Promise<boolean> {
+  if (lastPlayedId === id) return Promise.resolve(true);
+  if (playing) return playing.id === id ? playing.p : playing.p.then(() => startVoice(id));
   const a = audioEl();
   playGen++;
   a.muted = false;
   a.currentTime = 0;
   // play() は、タップの中で呼ぶ（unlockChime の playNow）ために、await の前に呼ぶ
-  playing = a.play().then(
+  const p = a.play().then(
     () => {
       playing = null;
-      lastPlayedAt = performance.now();
+      lastPlayedId = id;
       denied = false;
-      log('play');
+      log(`play #${id}`);
       return true;
     },
     (e: unknown) => {
       playing = null;
       if (errName(e) === 'NotAllowedError') denied = true;
-      log(`play failed: ${errName(e)}`);
+      log(`play failed #${id}: ${errName(e)}`);
       return false;
     },
   );
-  return playing;
+  playing = { id, p };
+  return p;
 }
 
 const errName = (e: unknown) => (e instanceof Error ? e.name : String(e));

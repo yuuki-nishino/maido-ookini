@@ -14,7 +14,7 @@ vi.mock('../../src/lib/firebase/staff', async () => {
   };
 });
 
-const { changeNote, changePayment, confirmOrder, findOrderOnServer, newOrderId, transitionOrder, voidExistsOnServer, voidOrFind, watchActiveOrders, watchOrdersOfDay } =
+const { changeNote, changePayment, confirmOrder, findOrderOnServer, newOrderId, recallOrder, transitionOrder, voidExistsOnServer, voidOrFind, watchActiveOrders, watchOrdersOfDay } =
   await import('../../src/lib/data/orders');
 type ConfirmContext = import('../../src/lib/domain/confirmFlow').ConfirmContext;
 
@@ -494,5 +494,34 @@ describe('メモ（#40）', () => {
     await sent;
     expect((await rawOrder(id)).note).toBe('オフラインで書いたメモ');
     unsub();
+  });
+});
+
+describe('もう一度呼ぶ（#58）', () => {
+  it('recallOrder：できあがりの注文の calls が、1ずつ増える。状態・支払い方法は変わらない。購読（調理画面）の Order にも calls が出る', async () => {
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    await confirmOrder('e1', ctxOf(id), ALICE);
+    const confirmed = (await findOrderOnServer('e1', id))!;
+    expect(confirmed.calls).toBe(0); // 確定では、書かない（無い＝ 0）
+    expect('calls' in (await rawOrder(id))).toBe(false);
+    await transitionOrder('e1', confirmed, 'ready', ALICE);
+    const ready = (await findOrderOnServer('e1', id))!;
+    await recallOrder('e1', ready, ALICE);
+    await recallOrder('e1', ready, ALICE);
+    expect(await rawOrder(id)).toMatchObject({ calls: 2, status: 'ready', payment: 'cash', updatedBy: ALICE });
+    expect((await findOrderOnServer('e1', id))!.calls).toBe(2);
+  });
+
+  it('recallOrder：できあがりでない注文は、書く前に validation。画面が古く、サーバーではお渡し済みなら、ルールが拒否（permission）', async () => {
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    await confirmOrder('e1', ctxOf(id), ALICE);
+    const preparing = (await findOrderOnServer('e1', id))!;
+    await expect(recallOrder('e1', preparing, ALICE)).rejects.toMatchObject({ code: 'validation' });
+    await transitionOrder('e1', preparing, 'ready', ALICE);
+    const ready = (await findOrderOnServer('e1', id))!;
+    await transitionOrder('e1', ready, 'done', ALICE); // ほかのスタッフが、先に「渡した」にした
+    await expect(recallOrder('e1', ready, ALICE)).rejects.toMatchObject({ code: 'permission' });
   });
 });
