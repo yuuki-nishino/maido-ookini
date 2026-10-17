@@ -5,7 +5,7 @@ import styles from './Icon.module.css';
 
 const PATHS = {
   // ベル：音のお知らせ
-  bell: ['M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6z', 'M10 19a2 2 0 0 0 4 0'],
+  bell: ['M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6z', 'M10.2 18.6h3.6a1.8 1.8 0 0 1-3.6 0z'],
   // 注意：三角に「!」
   alert: ['M12 3.5 2.5 20h19L12 3.5z', 'M12 10v4.5', 'M12 17.2v.1'],
   // メガホン：お店からの呼び出し
@@ -13,6 +13,9 @@ const PATHS = {
 } as const;
 
 export type IconName = keyof typeof PATHS;
+
+/** 塗りつぶす形（文字の色で塗る）。ベルは、線だけだと細く見えるため、塗る（#62 の実機の確認） */
+const FILLED: ReadonlySet<IconName> = new Set(['bell']);
 
 /** アイコン＋文字。行の真ん中にそろえて並べる */
 export function IconLabel({ icon, children }: { icon: IconName; children: ComponentChildren }) {
@@ -26,7 +29,7 @@ export function IconLabel({ icon, children }: { icon: IconName; children: Compon
 
 export function Icon({ name }: { name: IconName }) {
   return (
-    <svg class={styles.icon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg class={`${styles.icon} ${FILLED.has(name) ? styles.filled : ''}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {PATHS[name].map((d) => (
         <path key={d} d={d} />
       ))}

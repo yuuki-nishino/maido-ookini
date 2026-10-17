@@ -20,6 +20,11 @@
 }
 
 .label > .icon {
-  margin-top: 0.05em; /* 行の高さ（1.25）とアイコン（1.15em）の差の半分 */
+  margin-top: 0.12em; /* 文字の見た目の中心にそろえる（行の高さとの差の半分より、少し下。実機の確認） */
   vertical-align: 0;
+}
+
+/* 塗りつぶす形（ベル）。線も同じ色で、輪郭を丸く保つ */
+.filled {
+  fill: currentColor;
 }
