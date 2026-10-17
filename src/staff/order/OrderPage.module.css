@@ -215,6 +215,7 @@
 .options {
   display: grid;
   gap: var(--sp-4);
+  touch-action: manipulation; /* ボタンの隙間を連続でタップしても、拡大しない（#61 のレビュー L2） */
 }
 
 .group {

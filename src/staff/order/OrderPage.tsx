@@ -6,7 +6,7 @@ import { Empty, ErrorView, Loading } from '../../components/Feedback';
 import { TextField } from '../../components/TextField';
 import type { MenuItem } from '../../lib/data/types';
 import { normalizeNote, NOTE_MAX } from '../../lib/domain/note';
-import { addTendered, calcChange, formatYen, lineNotice, parseTendered, QTY_MAX, type CartLine } from '../../lib/domain/order';
+import { addTendered, calcChange, formatYen, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
 import {
   addItemToCart,
   applyLineCurrentPrice,
@@ -241,7 +241,7 @@ function Options() {
               消す
             </Button>
           </div>
-          {/* 「ちょうど」は合計に置き換える。お金のボタンは、足す（入力が不正なときは、何に足すか分からないため、押せない） */}
+          {/* 「ちょうど」は合計に置き換える。お金のボタンは、足す（入力が不正なとき〔何に足すか分からない〕・上限を超えるときは、押せない） */}
           <div class={styles.quick}>
             <button type="button" class={styles.quickButton} disabled={total === 0} onClick={() => setTendered(String(total))}>
               ちょうど
@@ -251,7 +251,7 @@ function Options() {
                 key={v}
                 type="button"
                 class={styles.quickButton}
-                disabled={tendered === null}
+                disabled={tendered === null || tendered + v > TENDERED_MAX}
                 aria-label={`お預りに${v.toLocaleString('ja-JP')}円を足す`}
                 onClick={() => setTendered(addTendered(tenderedText.value, v))}
               >
