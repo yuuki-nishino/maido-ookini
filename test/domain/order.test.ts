@@ -10,6 +10,7 @@ import {
   formatYen,
   lineNotice,
   needsCooking,
+  addTendered,
   parseTendered,
   removeLine,
   TENDERED_MAX,
@@ -114,6 +115,32 @@ describe('lineNotice / applyCurrentPrice', () => {
       { menuId: 'y', name: '焼きそば大', price: 600, qty: 2 },
     ]);
     expect(applyCurrentPrice([line], 'y', [])).toEqual([line]); // 削除された品は変えない
+  });
+});
+
+describe('addTendered（お金のボタンで足す。#61）', () => {
+  it('いまのお預りに足す。空は 0 から', () => {
+    let t = '';
+    for (const v of [1000, 1000, 100, 100, 100, 50, 10]) t = addTendered(t, v);
+    expect(t).toBe('2360');
+  });
+  it('手で打った値（全角・カンマ・円つきも）に足す。結果は、カンマなしの数字', () => {
+    expect(addTendered('500', 1000)).toBe('1500');
+    expect(addTendered('１，２００円', 100)).toBe('1300');
+  });
+  it('「¥」「￥」で始まる入力にも足す', () => {
+    expect(addTendered('¥500', 10)).toBe('510');
+    expect(addTendered('￥1,000', 50)).toBe('1050');
+  });
+  it('入力が不正なら、足さずにそのまま', () => {
+    expect(addTendered('abc', 100)).toBe('abc');
+    expect(addTendered('1.5', 100)).toBe('1.5');
+    expect(addTendered('1,0,0', 100)).toBe('1,0,0');
+  });
+  it('上限を超えるなら、足さずにそのまま。ちょうど上限までは足せる', () => {
+    expect(addTendered(String(TENDERED_MAX), 10)).toBe(String(TENDERED_MAX));
+    expect(addTendered(String(TENDERED_MAX - 10), 10)).toBe(String(TENDERED_MAX));
+    expect(addTendered(String(TENDERED_MAX - 5), 10)).toBe(String(TENDERED_MAX - 5));
   });
 });
 

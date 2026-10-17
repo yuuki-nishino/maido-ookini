@@ -26,6 +26,7 @@
 | `parseBulkMenu` | 区切り（空白・カンマ・全角・コロン）、`円`・`¥`・`￥` 付き、全角数字、`1,000` は通り `1,0,0` は通らない、空行、エラー行（名前なし・価格なし・価格が0や範囲外）、エラーがあれば追加しない |
 | `buildCsv` / `csvFileName` | BOM・CRLF・引用符のエスケープ、`= + - @`・タブ・`\r` で始まるセルの無害化、取り消しの含有。ファイル名の `/ \ : * ? " < > \|` の置き換え |
 | `canTransition` / 遷移で書く項目 | data-model.md §3 の全遷移、不正な遷移の拒否 |
+| `addTendered`（#61） | いまのお預りに足す（空は0から・手で打った値〔全角・カンマ・円〕にも）。結果はカンマなしの数字。不正な入力・上限超えは、足さずにそのまま |
 | `calcTotal` / `calcChange` | 不足（負数）、ちょうど、カートの価格（追加時点）で計算されること |
 | **`confirmReducer`**（確定フロー） | order-confirm.md §4 の全遷移：成功、失敗→再試行、失敗→やめる→found／voided／オフライン（unverifiable）、復元（found／missing→decide／オフライン）、`pending` がある間は確定を受け付けない。偽のタイマーで、8秒のタイムアウトを再現する |
 | **`connectionStatus`** | `navigator.onLine`、`fromCache` が10秒続いた場合・9秒の場合 |

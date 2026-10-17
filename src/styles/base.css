@@ -43,6 +43,17 @@ textarea {
   color: inherit;
 }
 
+/* 連続でタップしても、ダブルタップの拡大にしない（お金のボタンなど。#61）。2本指の拡大は、そのまま使える */
+button,
+a,
+input,
+select,
+textarea,
+label,
+[role='button'] {
+  touch-action: manipulation;
+}
+
 :focus-visible {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;

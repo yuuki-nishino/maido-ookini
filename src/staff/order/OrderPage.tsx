@@ -6,7 +6,7 @@ import { Empty, ErrorView, Loading } from '../../components/Feedback';
 import { TextField } from '../../components/TextField';
 import type { MenuItem } from '../../lib/data/types';
 import { normalizeNote, NOTE_MAX } from '../../lib/domain/note';
-import { calcChange, formatYen, lineNotice, parseTendered, QTY_MAX, type CartLine } from '../../lib/domain/order';
+import { addTendered, calcChange, formatYen, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
 import {
   addItemToCart,
   applyLineCurrentPrice,
@@ -29,7 +29,9 @@ import { closeConfirm, confirmState, startConfirm } from '../../state/confirm';
 import { useMenu } from '../../state/menu';
 import styles from './OrderPage.module.css';
 
-const QUICK = [1000, 5000, 10000] as const;
+// お金のボタン（#61）：押すたびに、お預りに足す。1行目はお札（「ちょうど」と並べる）、2行目は硬貨
+const BILLS = [1000, 5000, 10000] as const;
+const COINS = [10, 50, 100, 500] as const;
 
 export function OrderPage({ eventId }: { eventId: string }) {
   const { items, error } = useMenu(eventId);
@@ -239,13 +241,21 @@ function Options() {
               消す
             </Button>
           </div>
+          {/* 「ちょうど」は合計に置き換える。お金のボタンは、足す（入力が不正なとき〔何に足すか分からない〕・上限を超えるときは、押せない） */}
           <div class={styles.quick}>
             <button type="button" class={styles.quickButton} disabled={total === 0} onClick={() => setTendered(String(total))}>
               ちょうど
             </button>
-            {QUICK.map((v) => (
-              <button key={v} type="button" class={styles.quickButton} onClick={() => setTendered(String(v))}>
-                {v.toLocaleString('ja-JP')}
+            {[...BILLS, ...COINS].map((v) => (
+              <button
+                key={v}
+                type="button"
+                class={styles.quickButton}
+                disabled={tendered === null || tendered + v > TENDERED_MAX}
+                aria-label={`お預りに${v.toLocaleString('ja-JP')}円を足す`}
+                onClick={() => setTendered(addTendered(tenderedText.value, v))}
+              >
+                +{v.toLocaleString('ja-JP')}
               </button>
             ))}
           </div>
