@@ -20,7 +20,7 @@ import {
   type CustomerSnapshot,
   type CustomerStatus,
 } from '../lib/domain/customerView';
-import { chimeDebug, chimeLog, isChimeRunning, isVoiceReady, log, playChime, playChimeNow, resumeChime, setKeepAwake, syncAwake, unlockChime } from './chime';
+import { chimeDebug, chimeLog, isChimeRunning, isVoiceReady, log, playChime, setKeepAwake, syncAwake, unlockChime } from './chime';
 import styles from './CustomerApp.module.css';
 
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
@@ -37,7 +37,6 @@ export function CustomerApp() {
   const [armed, setArmed] = useState(false);
   const armedRef = useRef(false); // 購読のコールバックから読むため
   const [audioRunning, setAudioRunning] = useState(false);
-  const [noAudio, setNoAudio] = useState(false); // Web Audio が使えない端末（ボタンを出し続けない）
   const [voiceReady, setVoiceReady] = useState(false);
   // まだ鳴らせていない、できあがりの知らせ（声の読み込み待ち・裏に回っている間・音の再開待ち）。鳴らせたら消す
   const [pending, setPending] = useState(false);
@@ -90,8 +89,7 @@ export function CustomerApp() {
     void playChime().then((played) => played && setPending(false));
   }, [pending, armed, audioRunning, voiceReady, visible]);
 
-  // ホームに戻って、また開いたとき：画面を消えなくするのを取り直し、音を再開する。
-  // 再開できなければ（iPhone は、タップしないと、終わらないことがある。上限1.5秒）、ボタン「音をオンにし直す」を出す
+  // ホームに戻って、また開いたとき：画面を消えなくするのを取り直す。声は、上の effect が鳴らす（拒否されたら、ボタン「音をオンにし直す」）
   useEffect(() => {
     const onVisibility = () => {
       const isVisible = document.visibilityState === 'visible';
@@ -100,7 +98,6 @@ export function CustomerApp() {
       log(isVisible ? 'visible' : 'hidden');
       if (!isVisible) return;
       syncAwake();
-      void resumeChime().then(setAudioRunning);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
@@ -109,11 +106,9 @@ export function CustomerApp() {
   // ボタンのタップ：音を鳴らせる状態にする（聞こえる音は鳴らさない）。まだ鳴らせていない知らせがあれば、その場で鳴らす。
   // 画面を消えなくする。Android の振動も、このタップで効くようになる
   const onArm = () => {
-    const ok = unlockChime(onChimeChange);
-    setNoAudio(!ok);
+    unlockChime(onChimeChange, pending);
     armedRef.current = true;
     setArmed(true);
-    if (pending && playChimeNow()) setPending(false);
     setKeepAwake(shouldKeepAwake(status, true));
     onChimeChange();
   };
@@ -146,7 +141,7 @@ export function CustomerApp() {
             電波の良い場所で、もう一度開いてください
           </Notice>
         ) : view?.state === 'active' ? (
-          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} chime={chimeButton(view.order.status, armed, audioRunning || noAudio, pending)} onArm={onArm} />
+          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} chime={chimeButton(view.order.status, armed, audioRunning, pending)} onArm={onArm} />
         ) : null}
         {chimeDebug && (
           <pre class={styles.debug}>
