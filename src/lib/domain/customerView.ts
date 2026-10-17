@@ -50,14 +50,34 @@ export function customerView(snapshot: CustomerSnapshot | null, waitedMs: number
   return snapshot.fromCache ? { state: 'loading', slow: waitedMs >= SLOW_AFTER_MS } : { state: 'notFound' };
 }
 
-/** 「できあがり」へ変わった瞬間だけ、振動する（直前が調理中で、新しいのができあがり）。最初の表示（prev が null）では、しない */
-export function shouldVibrate(prev: CustomerStatus | null, next: CustomerStatus): boolean {
+/** 「できあがり」へ変わった瞬間だけ、知らせる（音・振動。直前が調理中で、新しいのができあがり）。最初の表示（prev が null）では、しない */
+export function shouldAlert(prev: CustomerStatus | null, next: CustomerStatus): boolean {
   return prev === 'preparing' && next === 'ready';
+}
+
+/**
+ * 音のお知らせのボタン（screens.md §4.2、#57）。ブラウザは、一度もタップされていないページでは、音を鳴らせないため、タップしてもらう
+ * - arm：まだタップされていない →「できあがりを音で知らせる」
+ * - retry：タップされたが、音を鳴らせない状態に戻った（ホームに戻ったあと、再開できなかったなど）→「音をオンにし直す」
+ * - armed：鳴らせる →「音でお知らせします」（ボタンではなく、表示だけ）
+ * - null：出さない（調理中のときだけ出す。できあがり・お渡し済み・取り消しでは、もう鳴らすことがない）
+ */
+export type ChimeButton = 'arm' | 'retry' | 'armed' | null;
+
+export function chimeButton(status: CustomerStatus, armed: boolean, audioRunning: boolean): ChimeButton {
+  if (status !== 'preparing') return null;
+  if (!armed) return 'arm';
+  return audioRunning ? 'armed' : 'retry';
+}
+
+/** 画面を消えないようにしておくか（Screen Wake Lock）。タップのあと、調理中・できあがりの間だけ（お渡し済み・取り消しでは、電池のため、外す） */
+export function shouldKeepAwake(status: CustomerStatus | null, armed: boolean): boolean {
+  return armed && (status === 'preparing' || status === 'ready');
 }
 
 /** 状況ごとの、バッジと案内文（SPEC 6.7） */
 export const CUSTOMER_STATUS_TEXT: Record<CustomerStatus, { badge: string; message: string }> = {
-  preparing: { badge: '調理中', message: 'ただいま調理中です。できあがるまでこのままお待ちください' },
+  preparing: { badge: '調理中', message: 'ただいま調理中です。できあがるまで、この画面を開いたままお待ちください' },
   ready: { badge: 'へい、お待ち！', message: '受け渡し口までお越しください' },
   done: { badge: 'お渡し済み', message: '毎度おおきに！' },
   cancelled: { badge: '取り消し', message: 'この注文は取り消されました。お近くのスタッフへお声がけください' },

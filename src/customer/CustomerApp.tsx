@@ -1,24 +1,34 @@
 // お客様画面（/s?e=&o=）。注文1件の状況を表示する（screens.md §4、SPEC 6.7）。
 // Auth・Service Worker・永続キャッシュを使わない（DESIGN.md §4）。ホーム画面への追加は求めない
 import type { ComponentChildren } from 'preact';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Noren } from '../components/Noren';
 import { watchOrder } from '../lib/data/customerOrder';
 import {
+  chimeButton,
   CUSTOMER_STATUS_TEXT,
   customerView,
   formatClock,
   isWaiting,
   parseOrderLink,
-  shouldVibrate,
+  shouldAlert,
+  shouldKeepAwake,
   startWaitTicker,
+  type ChimeButton,
   type CustomerOrder,
   type CustomerSnapshot,
   type CustomerStatus,
 } from '../lib/domain/customerView';
+import { isChimeRunning, keepAwake, playChime, releaseAwake, resumeChime, unlockChime } from './chime';
 import styles from './CustomerApp.module.css';
 
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
+
+/** できあがりを知らせる（音・振動）。音は、ボタンをタップしたあとだけ鳴る（playChime は、タップの前は何もしない） */
+function alertReady() {
+  navigator.vibrate?.([200, 100, 200]); // 対応する端末のみ（iPhone は非対応）
+  void playChime();
+}
 
 export function CustomerApp() {
   // 不正なリンク（QRの読み違い・URLの改変）は、購読しない
@@ -28,16 +38,25 @@ export function CustomerApp() {
   const [waitedMs, setWaitedMs] = useState(0);
   const [startedAt] = useState(Date.now); // 開いた時刻（読み込みの待ちの起点）
   const [lastOrder, setLastOrder] = useState<CustomerOrder | null>(null);
+  // 音のお知らせ（#57）：armed ＝ このページで、ボタンをタップした。audioRunning ＝ いま音を鳴らせる
+  const [armed, setArmed] = useState(false);
+  const [audioRunning, setAudioRunning] = useState(false);
+  // 裏に回っている間に、できあがりになった。表示に戻ったときに、もう一度知らせる（裏では、音・振動が届かないことがあるため）
+  const missedRef = useRef(false);
 
   useEffect(() => {
     if (!link) return;
-    let prev: CustomerStatus | null = null; // 最初の表示では、振動しない
+    let prev: CustomerStatus | null = null; // 最初の表示では、知らせない
     return watchOrder(link.eventId, link.orderId, (s) => {
       setSnapshot(s);
       setUpdatedAt(new Date());
       if (s.kind === 'doc' && s.order) {
-        // 「できあがり」に変わった瞬間だけ振動する（対応する端末のみ。iPhone は非対応）
-        if (shouldVibrate(prev, s.order.status)) navigator.vibrate?.([200, 100, 200]);
+        // 「できあがり」に変わった瞬間だけ知らせる
+        if (shouldAlert(prev, s.order.status)) {
+          alertReady();
+          if (document.visibilityState === 'hidden') missedRef.current = true;
+        }
+        if (s.order.status !== 'ready') missedRef.current = false;
         prev = s.order.status;
         setLastOrder(s.order); // エラーのあとも、カードを残すため
       }
@@ -53,6 +72,41 @@ export function CustomerApp() {
   }, [waiting, startedAt]);
 
   const view = link ? customerView(snapshot, waitedMs, lastOrder) : null;
+  const status = view?.state === 'active' ? view.order.status : null;
+
+  // 画面を消えなくする（タップのあと、調理中・できあがりの間だけ）。対応していない端末では、何もしない
+  const awake = shouldKeepAwake(status, armed);
+  useEffect(() => {
+    if (awake) void keepAwake();
+    else releaseAwake();
+  }, [awake]);
+
+  // ホームに戻って、また開いたとき：画面を消えなくするのを取り直し、音を再開する。再開できなければ、ボタンを、もう一度出す
+  useEffect(() => {
+    if (!armed) return;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (awake) void keepAwake();
+      void resumeChime().then((running) => {
+        setAudioRunning(running);
+        if (missedRef.current) {
+          missedRef.current = false;
+          alertReady();
+        }
+      });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [armed, awake]);
+
+  // ボタンのタップ：音を鳴らせる状態にし（確かめの音を1回）、画面を消えなくする。Android の振動も、このタップで効くようになる
+  const onArm = () => {
+    unlockChime(setAudioRunning);
+    setAudioRunning(isChimeRunning());
+    setArmed(true);
+    navigator.vibrate?.(100);
+    void keepAwake();
+  };
 
   // タブの題名にも、番号と状況を出す（ほかのアプリに切り替えても、分かるように）
   const activeNumber = view?.state === 'active' ? view.order.number : null;
@@ -82,7 +136,7 @@ export function CustomerApp() {
             電波の良い場所で、もう一度開いてください
           </Notice>
         ) : view?.state === 'active' ? (
-          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} />
+          <Active order={view.order} fromCache={view.fromCache} updatedAt={updatedAt} chime={chimeButton(view.order.status, armed, audioRunning)} onArm={onArm} />
         ) : null}
       </main>
     </>
@@ -98,7 +152,9 @@ function Notice({ title, error = false, children }: { title: string; error?: boo
   );
 }
 
-function Active({ order, fromCache, updatedAt }: { order: CustomerOrder; fromCache: boolean; updatedAt: Date | null }) {
+type ActiveProps = { order: CustomerOrder; fromCache: boolean; updatedAt: Date | null; chime: ChimeButton; onArm: () => void };
+
+function Active({ order, fromCache, updatedAt, chime, onArm }: ActiveProps) {
   const text = CUSTOMER_STATUS_TEXT[order.status];
   return (
     <>
@@ -112,6 +168,17 @@ function Active({ order, fromCache, updatedAt }: { order: CustomerOrder; fromCac
         <span class={styles.badge}>{text.badge}</span>
         <p class={styles.message}>{text.message}</p>
       </section>
+
+      {chime === 'armed' ? (
+        <p class={styles.chimeOn} role="status">
+          🔔 できあがりを、音でお知らせします
+        </p>
+      ) : chime ? (
+        <button type="button" class={styles.chimeButton} onClick={onArm}>
+          🔔 {chime === 'arm' ? 'できあがりを音で知らせる' : '音をオンにし直す'}
+          <span class={styles.chimeSub}>タップしてください（音が鳴ります）</span>
+        </button>
+      ) : null}
 
       <section class={styles.detail} aria-label="ご注文の内容">
         <ul class={styles.items}>
