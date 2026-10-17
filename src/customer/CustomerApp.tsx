@@ -99,7 +99,7 @@ export function CustomerApp() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [armed, awake]);
 
-  // ボタンのタップ：音を鳴らせる状態にし（確かめの音を1回）、画面を消えなくする。Android の振動も、このタップで効くようになる
+  // ボタンのタップ：音を鳴らせる状態にし（聞こえる音は鳴らさない）、画面を消えなくする。Android の振動も、このタップで効くようになる
   const onArm = () => {
     unlockChime(setAudioRunning);
     setAudioRunning(isChimeRunning());
@@ -176,7 +176,7 @@ function Active({ order, fromCache, updatedAt, chime, onArm }: ActiveProps) {
       ) : chime ? (
         <button type="button" class={styles.chimeButton} onClick={onArm}>
           🔔 {chime === 'arm' ? 'できあがりを音で知らせる' : '音をオンにし直す'}
-          <span class={styles.chimeSub}>タップしてください（音が鳴ります）</span>
+          <span class={styles.chimeSub}>タップしてください</span>
         </button>
       ) : null}
 
