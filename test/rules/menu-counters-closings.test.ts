@@ -1,6 +1,6 @@
 // メニュー・カウンター・レジ締めのルール（testing.md §3：3〜6・48〜50）
 import { assertFails, assertSucceeds, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, increment, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { ALICE, anon, as, BOB, CAROL, createEnv, DAY, OWNER, seed } from './helpers';
 
@@ -66,6 +66,22 @@ describe('メニュー', () => {
     await assertSucceeds(updateDoc(doc(db, 'events/e1/menu/m1'), { cook: true }));
   });
 
+  it('在庫（stock。#67）は、無くても（古い商品）、null・0〜99,999 の整数でも通る。increment で補充でき、null で使わないに戻せる', async () => {
+    const db = as(env, ALICE);
+    await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m2'), menuItem({ stock: 50 })));
+    await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m3'), menuItem({ stock: null })));
+    await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m4'), menuItem({ stock: 0 })));
+    await assertSucceeds(updateDoc(doc(db, 'events/e1/menu/m1'), { stock: 99999 })); // m1 は stock の無い古い形
+    await assertSucceeds(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: increment(10) }));
+    await assertSucceeds(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: null }));
+  });
+
+  it('在庫（#67）：補充で 99,999 を超えると拒否', async () => {
+    const db = as(env, ALICE);
+    await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m2'), menuItem({ stock: 99990 })));
+    await assertFails(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: increment(10) }));
+  });
+
   it('価格の境界：1円と100,000円は許可', async () => {
     const db = as(env, ALICE);
     await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m2'), menuItem({ price: 1 })));
@@ -82,6 +98,10 @@ describe('メニュー', () => {
     ['order が文字列', { order: '10' }],
     ['soldOut が真偽値でない', { soldOut: 0 }],
     ['cook が真偽値でない', { cook: 'no' }],
+    ['在庫が負', { stock: -1 }],
+    ['在庫が100,000', { stock: 100000 }],
+    ['在庫が小数', { stock: 1.5 }],
+    ['在庫が文字列', { stock: '10' }],
     ['余計な項目', { memo: 'x' }],
   ])('49：%s は拒否', async (_label, patch) => {
     const db = as(env, ALICE);

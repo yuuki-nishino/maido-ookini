@@ -14,7 +14,7 @@ vi.mock('../../src/lib/firebase/staff', async () => {
   };
 });
 
-const { addMenuItem, addMenuItemsBulk, deleteMenuItem, moveMenuItem, updateMenuItem, watchMenu } = await import('../../src/lib/data/menu');
+const { addMenuItem, addMenuItemsBulk, addStock, deleteMenuItem, moveMenuItem, updateMenuItem, watchMenu } = await import('../../src/lib/data/menu');
 const { parseBulkMenu } = await import('../../src/lib/domain/menu');
 type MenuItem = import('../../src/lib/data/types').MenuItem;
 
@@ -29,7 +29,7 @@ const OWNER = 'owner';
 const ALICE = 'alice';
 const old = Timestamp.fromMillis(Date.now() - 48 * 3600 * 1000);
 
-async function seed(menu: Record<string, { name: string; price: number; order: number; soldOut?: boolean }> = {}) {
+async function seed(menu: Record<string, { name: string; price: number; order: number; soldOut?: boolean; stock?: number | null }> = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await db.doc('events/e1').set({ name: 'e1', startDate: '2026-08-01', endDate: '2026-08-01', floatCash: 0, ownerUid: OWNER, deleting: false, createdAt: old });
@@ -99,7 +99,7 @@ describe('追加・更新・削除', () => {
   it('100件を超える追加は、validation で拒否（書かない）', async () => {
     await seed();
     setUser(ALICE);
-    const full = Array.from({ length: 100 }, (_, k) => ({ id: `m${k}`, name: 'x', price: 1, order: k, soldOut: false, cook: true }));
+    const full = Array.from({ length: 100 }, (_, k) => ({ id: `m${k}`, name: 'x', price: 1, order: k, soldOut: false, cook: true, stock: null }));
     await expect(addMenuItem('e1', { name: 'y', price: 1 }, full)).rejects.toMatchObject({ code: 'validation' });
   });
 
@@ -148,7 +148,7 @@ describe('addMenuItemsBulk（#11）', () => {
   it('合計が100件を超えるなら、1件も書かない（validation）', async () => {
     await seed();
     setUser(ALICE);
-    const items = Array.from({ length: 99 }, (_, k) => ({ id: `m${k}`, name: 'x', price: 1, order: k, soldOut: false, cook: true }));
+    const items = Array.from({ length: 99 }, (_, k) => ({ id: `m${k}`, name: 'x', price: 1, order: k, soldOut: false, cook: true, stock: null }));
     const lines = [
       { line: 1, name: 'a', price: 1 },
       { line: 2, name: 'b', price: 1 },
@@ -181,5 +181,44 @@ describe('オフライン', () => {
     expect((await watchUntil((i) => i[0]?.soldOut === true).result)[0]?.soldOut).toBe(true);
     await enableNetwork(db);
     await sent;
+  });
+});
+
+describe('在庫（#67）', () => {
+  it('無い（古い）商品は null（使わない）。「残りを直す」で使い始め、補充（increment）で足し、null で使わないに戻せる', async () => {
+    await seed({ a: { name: '焼きそば', price: 500, order: 10 } });
+    setUser(ALICE);
+    const items = await watchUntil((i) => i.length === 1).result;
+    expect(items[0]?.stock).toBeNull();
+    await expect(addStock('e1', items[0]!, 10)).rejects.toMatchObject({ code: 'validation' }); // 使っていない商品には足さない
+    await updateMenuItem('e1', 'a', { stock: 50 });
+    const set = await watchUntil((i) => i[0]?.stock === 50).result;
+    await addStock('e1', set[0]!, 10);
+    expect((await watchUntil((i) => i[0]?.stock === 60).result)[0]?.stock).toBe(60);
+    await updateMenuItem('e1', 'a', { stock: null });
+    expect((await watchUntil((i) => i[0]?.stock === null).result)[0]?.stock).toBeNull();
+  });
+
+  it('補充は、ほかの端末の変更と重なっても、足した分が消えない（increment）', async () => {
+    await seed({ a: { name: '焼きそば', price: 500, order: 10, stock: 20 } });
+    setUser(ALICE);
+    const items = await watchUntil((i) => i[0]?.stock === 20).result;
+    // 画面が見ている残り（20）が古くても、サーバーの値に足す
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('events/e1/menu/a').update({ stock: 15 });
+    });
+    await addStock('e1', items[0]!, 5);
+    expect((await watchUntil((i) => i[0]?.stock === 20).result)[0]?.stock).toBe(20);
+  });
+
+  it('不正な数は、書く前に validation（負・上限超え・小数。補充の 0）', async () => {
+    await seed({ a: { name: '焼きそば', price: 500, order: 10, stock: 99990 } });
+    setUser(ALICE);
+    const items = await watchUntil((i) => i.length === 1).result;
+    await expect(updateMenuItem('e1', 'a', { stock: -1 })).rejects.toMatchObject({ code: 'validation' });
+    await expect(updateMenuItem('e1', 'a', { stock: 100000 })).rejects.toMatchObject({ code: 'validation' });
+    await expect(updateMenuItem('e1', 'a', { stock: 1.5 })).rejects.toMatchObject({ code: 'validation' });
+    await expect(addStock('e1', items[0]!, 0)).rejects.toMatchObject({ code: 'validation' });
+    await expect(addStock('e1', items[0]!, 10)).rejects.toMatchObject({ code: 'validation' }); // 99,999 を超える
   });
 });

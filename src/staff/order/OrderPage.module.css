@@ -382,3 +382,15 @@
   font-size: var(--fs-sm);
   font-weight: 700;
 }
+
+/* 在庫の残り（#67）。少ない（5以下）ときは、赤・太字で目立たせる（補充の目安） */
+.stockLabel {
+  font-size: var(--fs-xs);
+  color: var(--color-ink-sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.stockLow {
+  color: var(--status-void-fg);
+  font-weight: 800;
+}

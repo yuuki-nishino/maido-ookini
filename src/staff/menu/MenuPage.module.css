@@ -188,3 +188,27 @@
   font-size: var(--fs-sm);
   font-weight: 700;
 }
+
+/* 在庫（#67）。使っていない：薄い枠。使っている：残りを太字で。少ない（5以下）：赤 */
+.stockButton {
+  min-height: var(--tap-min);
+  padding: var(--sp-1) var(--sp-3);
+  border: 2px dashed var(--color-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink-sub);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.stockButton[data-managed='true'] {
+  border-style: solid;
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+.stockButton[data-low='true'] {
+  border-color: var(--status-void-fg);
+  color: var(--status-void-fg);
+}
