@@ -402,6 +402,52 @@ describe('注文の更新', () => {
   });
 });
 
+describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
+  // 上の beforeEach（カウンター・o1）に、メニューを足す（seed は全体を消すため、使わない）
+  beforeEach(() =>
+    env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(dbOf(ctx), 'events/e1/menu/y'), { name: '焼きそば', price: 500, order: 10, soldOut: false, stock: 5 });
+    }),
+  );
+
+  it('注文の作成（減らした行に stock: true）と、在庫を減らす書き込みを、同時にできる', async () => {
+    const db = as(env, ALICE);
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'events/e1/counters', DAY), { n: 2 });
+    batch.set(doc(db, 'events/e1/orders/o2'), newOrder(ALICE, 2, true, { items: [{ ...orderItems[0], stock: true }] }));
+    batch.update(doc(db, 'events/e1/menu/y'), { stock: increment(-2) });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('取り消し（状態の変更）と、在庫を戻す書き込みを、同時にできる。取り消しを戻すで減らし、マイナスになってもよい', async () => {
+    const db = as(env, ALICE);
+    const cancel = writeBatch(db);
+    cancel.update(doc(db, 'events/e1/orders/o1'), {
+      status: 'cancelled',
+      cancelledFrom: 'preparing',
+      cancelledAt: serverTimestamp(),
+      updatedBy: ALICE,
+      updatedAt: serverTimestamp(),
+    });
+    cancel.update(doc(db, 'events/e1/menu/y'), { stock: increment(2) });
+    await assertSucceeds(cancel.commit());
+    const restore = writeBatch(db);
+    restore.update(doc(db, 'events/e1/orders/o1'), {
+      status: 'preparing',
+      cancelledFrom: null,
+      cancelledAt: null,
+      updatedBy: ALICE,
+      updatedAt: serverTimestamp(),
+    });
+    restore.update(doc(db, 'events/e1/menu/y'), { stock: increment(-10) });
+    await assertSucceeds(restore.commit());
+  });
+
+  it('メンバーでない人は、在庫を変えられない', async () => {
+    await assertFails(updateDoc(doc(as(env, BOB), 'events/e1/menu/y'), { stock: increment(-1) }));
+  });
+});
+
 describe('もう一度呼ぶ（#58）：できあがりの注文の calls を、1だけ増やす', () => {
   const recall = (uid: string, calls: unknown, patch: Record<string, unknown> = {}) => ({
     calls,

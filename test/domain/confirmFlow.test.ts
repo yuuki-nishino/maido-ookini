@@ -18,6 +18,16 @@ describe('confirmReducer', () => {
     expect(run({ type: 'submit', ctx }, { type: 'succeeded', order })).toEqual({ kind: 'done', ctx, order, recovered: false });
   });
 
+  it('在庫が足りない（#68）：submitting → idle（「在庫が足りない」の知らせと、足りない商品）。閉じると消える。次の確定もできる', () => {
+    const shortages = [{ menuId: 'y', name: '焼きそば', stock: 1, qty: 2 }];
+    const s = run({ type: 'submit', ctx }, { type: 'stockShort', shortages });
+    expect(s).toEqual({ kind: 'idle', notice: 'stock', shortages });
+    expect(canSubmit(s)).toBe(true);
+    expect(confirmReducer(s, { type: 'close' })).toEqual(initialConfirmState);
+    // 送信中でなければ、何もしない
+    expect(confirmReducer(initialConfirmState, { type: 'stockShort', shortages })).toBe(initialConfirmState);
+  });
+
   it('失敗 → もう一度試す：同じ ctx（同じ orderId）で submitting に戻る', () => {
     const s = run({ type: 'submit', ctx }, { type: 'failed', reason: 'timeout' });
     expect(s).toEqual({ kind: 'failed', ctx, reason: 'timeout' });

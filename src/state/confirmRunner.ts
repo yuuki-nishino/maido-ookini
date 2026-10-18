@@ -13,6 +13,7 @@ import {
   type ConfirmState,
   type FailReason,
 } from '../lib/domain/confirmFlow';
+import type { StockShortage } from '../lib/domain/stock';
 
 export const CONFIRM_TIMEOUT_MS = 8000;
 
@@ -111,6 +112,12 @@ export function createConfirmRunner(
       reason = 'timeout';
     } catch (e) {
       const code = codeOf(e);
+      if (code === 'stock') {
+        // 在庫が足りない（#68）：注文は作られていない（確定のトランザクションの中で、書く前に止めた）。カートを残して戻す
+        const shortages = typeof e === 'object' && e !== null && 'shortages' in e && Array.isArray(e.shortages) ? (e.shortages as StockShortage[]) : [];
+        if (still('submitting', ctx.orderId)) dispatch({ type: 'stockShort', shortages });
+        return;
+      }
       if (code === 'permission') {
         // 墓標があれば「やめた注文」（order-confirm.md §5.1）。無ければ権限の文言。
         // 確かめられない（失敗・残りの時間切れ）ときは、登録されたか分からないので timeout（もう一度試す・やめるで確かめる）

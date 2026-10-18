@@ -95,7 +95,9 @@ export function OrderPage({ eventId }: { eventId: string }) {
         <p class={styles.voidedNotice} role="status">
           {confirmState.value.notice === 'voided'
             ? '前の注文は、やめた扱いにしました（登録されていません）。カートは、そのまま残っています'
-            : 'このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません'}
+            : confirmState.value.notice === 'stock'
+              ? `在庫が足りないため、確定しませんでした。${(confirmState.value.shortages ?? []).map((s) => `${s.name}の残りが ${s.stock} です（注文は ${s.qty}）`).join('。')}。数を減らして、もう一度確定してください`
+              : 'このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません'}
           <button type="button" class={styles.noticeButton} onClick={closeConfirm}>
             閉じる
           </button>

@@ -28,6 +28,8 @@ export interface OrderLine {
   qty: number;
   /** 調理が必要か（#52）。無い（古い）行は、調理あり */
   cook?: boolean;
+  /** 確定で、在庫を減らした行（#68）。取り消しで戻すのは、この行だけ。無い行は、減らしていない */
+  stock?: boolean;
 }
 
 /** 注文（data-model.md §2.6）。時刻は、書き込み直後（サーバー時刻の確定前）に null になり得る */

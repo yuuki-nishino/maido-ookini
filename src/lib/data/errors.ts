@@ -1,5 +1,7 @@
 // データアクセスのエラー（data-access.md §4）。UI は code で表示を分ける
 // Firebase SDK を import しない（エラーの code の文字列だけを見る）。単体テストのため
+import type { StockShortage } from '../domain/stock';
+
 export type AppErrorCode =
   | 'offline' // 通信できない
   | 'timeout' // 8秒で応答がない
@@ -8,6 +10,7 @@ export type AppErrorCode =
   | 'conflict' // 競合（他の端末が先に変更した）
   | 'validation' // 入力・遷移が不正
   | 'popup-blocked' // ログインのポップアップが、ブラウザに止められた
+  | 'stock' // 確定で、在庫が足りなかった（#68。StockShortError）
   | 'unknown';
 
 export class AppError extends Error {
@@ -17,6 +20,16 @@ export class AppError extends Error {
     super(code, options);
     this.name = 'AppError';
     this.code = code;
+  }
+}
+
+/** 確定で、在庫が足りなかった（#68）。注文は作られていない（確定のトランザクションの中で、書く前に止めた） */
+export class StockShortError extends AppError {
+  readonly shortages: StockShortage[];
+
+  constructor(shortages: StockShortage[]) {
+    super('stock');
+    this.shortages = shortages;
   }
 }
 
