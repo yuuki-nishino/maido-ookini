@@ -76,6 +76,12 @@ describe('メニュー', () => {
     await assertSucceeds(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: null }));
   });
 
+  it('在庫（#67）：小数の increment は拒否（整数でなくなる）', async () => {
+    const db = as(env, ALICE);
+    await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m2'), menuItem({ stock: 5 })));
+    await assertFails(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: increment(0.5) }));
+  });
+
   it('在庫（#67）：補充で 99,999 を超えると拒否', async () => {
     const db = as(env, ALICE);
     await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m2'), menuItem({ stock: 99990 })));
