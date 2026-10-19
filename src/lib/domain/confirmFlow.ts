@@ -12,6 +12,8 @@ export interface ConfirmDraft {
   qr: boolean;
   /** メモ（#40）。この項目が無い、古い pending の記録は、空として扱う */
   note?: string;
+  /** 在庫が足りない分を、予約として受ける（#69。足りないと知らせたあと、スタッフが選んだとき）。無い＝受けない */
+  reserve?: boolean;
 }
 
 /** 1回の確定の文脈。再試行でも orderId・day は変えない */

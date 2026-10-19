@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   addToCart,
-  isSoldOut,
   applyCurrentPrice,
   calcChange,
   calcTotal,
@@ -111,11 +110,13 @@ describe('lineNotice / applyCurrentPrice', () => {
     expect(lineNotice(line, [{ ...yakisoba, price: 600, soldOut: true }])).toEqual({ currentPrice: 600, soldOut: true, deleted: false, stockShort: null });
     expect(lineNotice(line, [])).toEqual({ currentPrice: null, soldOut: false, deleted: true, stockShort: null });
   });
-  it('在庫（#67）：カートの数量が残りを超えたら、その残りを知らせる。残り0は売り切れ。在庫を使わない商品は知らせない', () => {
+  it('在庫（#67・#69）：カートの数量が残りを超えたら、その残り（0以上）を知らせる。手の売り切れ・在庫を使わない商品は知らせない', () => {
     // line は 2個
     expect(lineNotice(line, [{ ...yakisoba, stock: 1 }]).stockShort).toBe(1);
     expect(lineNotice(line, [{ ...yakisoba, stock: 2 }]).stockShort).toBeNull();
-    expect(lineNotice(line, [{ ...yakisoba, stock: 0 }])).toMatchObject({ soldOut: true, stockShort: null });
+    expect(lineNotice(line, [{ ...yakisoba, stock: 0 }])).toMatchObject({ soldOut: false, stockShort: 0 }); // 超える分は予約（#69）
+    expect(lineNotice(line, [{ ...yakisoba, stock: -3 }]).stockShort).toBe(0);
+    expect(lineNotice(line, [{ ...yakisoba, stock: 0, soldOut: true }])).toMatchObject({ soldOut: true, stockShort: null });
     expect(lineNotice(line, [{ ...yakisoba, stock: null }]).stockShort).toBeNull();
   });
   it('「現在の価格にする」で、その行の名前・価格をいまのメニューに合わせる。数量はそのまま', () => {
@@ -171,17 +172,10 @@ describe('parseTendered / formatYen', () => {
   });
 });
 
-describe('isSoldOut（在庫。#67）', () => {
-  it('手の売り切れ、または、在庫を使う商品で残りが0以下なら、売り切れ', () => {
-    expect(isSoldOut({ soldOut: true, stock: null })).toBe(true);
-    expect(isSoldOut({ soldOut: false, stock: 0 })).toBe(true);
-    expect(isSoldOut({ soldOut: false, stock: -1 })).toBe(true);
-    expect(isSoldOut({ soldOut: false, stock: 1 })).toBe(false);
-    expect(isSoldOut({ soldOut: false, stock: null })).toBe(false);
-    expect(isSoldOut({ soldOut: false })).toBe(false); // 無い（古い）商品
-  });
-  it('残り0の商品は、カートに入れられない（売り切れ）', () => {
-    expect(addToCart([], { ...yakisoba, stock: 0 })).toEqual({ ok: false, reason: 'soldOut' });
-    expect(addToCart([], { ...yakisoba, stock: 3 }).ok).toBe(true);
+describe('在庫の残りが0以下（#69）', () => {
+  it('手の売り切れでなければ、カートに入れられる（予約として受ける）。手の売り切れは入れられない', () => {
+    expect(addToCart([], { ...yakisoba, stock: 0 }).ok).toBe(true);
+    expect(addToCart([], { ...yakisoba, stock: -3 }).ok).toBe(true);
+    expect(addToCart([], { ...yakisoba, soldOut: true, stock: 5 })).toEqual({ ok: false, reason: 'soldOut' });
   });
 });

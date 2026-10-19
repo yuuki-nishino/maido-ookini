@@ -30,6 +30,8 @@ export interface OrderLine {
   cook?: boolean;
   /** 確定で、在庫を減らした行（#68）。取り消しで戻すのは、この行だけ。無い行は、減らしていない */
   stock?: boolean;
+  /** この行のうち、予約になった数（#69。在庫が足りなかった分）。無い行は 0 */
+  reserved?: number;
 }
 
 /** 注文（data-model.md §2.6）。時刻は、書き込み直後（サーバー時刻の確定前）に null になり得る */
@@ -45,6 +47,8 @@ export interface Order {
   status: OrderStatus;
   /** 「もう一度呼ぶ」を押した回数（#58。無い注文は 0） */
   calls: number;
+  /** 予約を含む注文（#69。在庫が足りない分を予約として確定した）。無い注文は false */
+  reserved: boolean;
   cancelledFrom: Exclude<OrderStatus, 'cancelled'> | null;
   qr: boolean;
   createdAt: Date | null;

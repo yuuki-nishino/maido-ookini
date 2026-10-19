@@ -98,7 +98,7 @@ describe('watchOrder のつなぎ直し', () => {
       data: () => ({ number: 3, total: 700, status: 'ready', payment: 'paypay', note: '辛さ抜き', createdBy: 'uid', items: [{ menuId: 'm', name: 'ラムネ', price: 200, qty: 1 }] }),
       metadata: { fromCache: false },
     });
-    expect(received[0]).toEqual({ kind: 'doc', fromCache: false, order: { number: 3, status: 'ready', total: 700, calls: 0, items: [{ name: 'ラムネ', price: 200, qty: 1 }] } });
+    expect(received[0]).toEqual({ kind: 'doc', fromCache: false, order: { number: 3, status: 'ready', total: 700, calls: 0, reserved: false, items: [{ name: 'ラムネ', price: 200, qty: 1 }] } });
   });
 
   it('「もう一度呼ぶ」の回数（calls）を渡す。無い注文・数でない値は 0（#58）', () => {

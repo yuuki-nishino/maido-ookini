@@ -178,3 +178,20 @@
   color: var(--color-ink-sub);
   text-align: center;
 }
+
+/* 予約を含む注文（#69）。在庫を用意してから作る */
+.reserved {
+  padding: 0 var(--sp-2);
+  border: 2px solid var(--status-void-fg);
+  border-radius: var(--radius-pill);
+  color: var(--status-void-fg);
+  font-size: var(--fs-sm);
+  font-weight: 800;
+}
+
+.reservedQty {
+  margin-left: var(--sp-1);
+  color: var(--status-void-fg);
+  font-size: var(--fs-sm);
+  font-weight: 800;
+}

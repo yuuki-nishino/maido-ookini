@@ -1,6 +1,6 @@
 // 在庫の確定・取り消し（#68）
 import { describe, expect, it } from 'vitest';
-import { decrementsStock, findShortages, stockAdjustments } from '../../src/lib/domain/stock';
+import { decrementsStock, findShortages, reservationsOf, reservedQty, stockAdjustments } from '../../src/lib/domain/stock';
 
 const lines = [
   { menuId: 'y', name: '焼きそば', qty: 3 },
@@ -59,5 +59,22 @@ describe('stockAdjustments', () => {
   });
   it('ほかの操作（完成・渡したなど）では、変えない', () => {
     for (const action of ['ready', 'backToPreparing', 'done', 'backToReady'] as const) expect(stockAdjustments(order, action, menu)).toEqual([]);
+  });
+});
+
+describe('reservationsOf・reservedQty（予約。#69）', () => {
+  it('予約の数は、在庫のマイナスの分。0以上・在庫を使わないなら 0', () => {
+    expect(reservationsOf(-3)).toBe(3);
+    expect(reservationsOf(0)).toBe(0);
+    expect(reservationsOf(5)).toBe(0);
+    expect(reservationsOf(null)).toBe(0);
+  });
+  it('行の予約の数は、注文の数のうち、残り（0未満は0）を超える分', () => {
+    expect(reservedQty(3, 2)).toBe(1);
+    expect(reservedQty(3, 3)).toBe(0);
+    expect(reservedQty(3, 0)).toBe(3);
+    expect(reservedQty(3, -5)).toBe(3);
+    expect(reservedQty(3, null)).toBe(0);
+    expect(reservedQty(3, undefined)).toBe(0);
   });
 });

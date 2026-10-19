@@ -7,7 +7,8 @@ import { TextField } from '../../components/TextField';
 import type { MenuItem } from '../../lib/data/types';
 import { normalizeNote, NOTE_MAX } from '../../lib/domain/note';
 import { LOW_STOCK } from '../../lib/domain/menu';
-import { addTendered, calcChange, formatYen, isSoldOut, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
+import { addTendered, calcChange, formatYen, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
+import { reservationsOf } from '../../lib/domain/stock';
 import {
   addItemToCart,
   applyLineCurrentPrice,
@@ -29,6 +30,7 @@ import { currentUser } from '../../state/auth';
 import { closeConfirm, confirmState, startConfirm } from '../../state/confirm';
 import { useMenu } from '../../state/menu';
 import styles from './OrderPage.module.css';
+import { StockShortDialog } from './StockShortDialog';
 
 // お金のボタン（#61）：押すたびに、お預りに足す。1行目はお札（「ちょうど」と並べる）、2行目は硬貨
 const BILLS = [1000, 5000, 10000] as const;
@@ -91,13 +93,18 @@ export function OrderPage({ eventId }: { eventId: string }) {
 
       <Options />
 
-      {confirmState.value.kind === 'idle' && confirmState.value.notice !== null && (
+      {/* 在庫が足りない（#69）：画面の中央のダイアログで、予約にするか、数を減らすかを選ぶ */}
+      <StockShortDialog
+        shortages={confirmState.value.kind === 'idle' && confirmState.value.notice === 'stock' ? (confirmState.value.shortages ?? []) : null}
+        onReserve={() => uid && startConfirm(eventId, uid, true)}
+        onReduce={closeConfirm}
+      />
+
+      {confirmState.value.kind === 'idle' && confirmState.value.notice !== null && confirmState.value.notice !== 'stock' && (
         <p class={styles.voidedNotice} role="status">
           {confirmState.value.notice === 'voided'
             ? '前の注文は、やめた扱いにしました（登録されていません）。カートは、そのまま残っています'
-            : confirmState.value.notice === 'stock'
-              ? `在庫が足りないため、確定しませんでした。${(confirmState.value.shortages ?? []).map((s) => `${s.name}の残りが ${s.stock} です（注文は ${s.qty}）`).join('。')}。数を減らして、もう一度確定してください`
-              : 'このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません'}
+            : 'このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません'}
           <button type="button" class={styles.noticeButton} onClick={closeConfirm}>
             閉じる
           </button>
@@ -111,21 +118,26 @@ export function OrderPage({ eventId }: { eventId: string }) {
 }
 
 function MenuButton({ item, qty, onAdd }: { item: MenuItem; qty: number; onAdd: () => void }) {
-  // 売り切れ：手の「売り切れ」、または、在庫の残りが0（#67。補充すれば、自動で戻る）
-  const soldOut = isSoldOut(item);
+  // 売り切れは、手の切り替えだけ。在庫の残りが0以下でも、予約として受ける（#69。予約の数を見て、止めるなら手で売り切れにする）
+  const soldOut = item.soldOut;
   const stock = !soldOut && item.stock !== null ? item.stock : null;
+  const reservations = reservationsOf(stock);
   return (
     <button
       type="button"
       class={`${styles.menuItem} ${qty > 0 ? styles.inCart : ''}`}
       disabled={soldOut}
       onClick={onAdd}
-      aria-label={`${item.name} ${formatYen(item.price)}${item.cook ? '' : '（調理なし）'}${soldOut ? '（売り切れ）' : `${stock !== null ? `（残り${stock}）` : ''}${qty > 0 ? `（カートに${qty}）` : ''}`}`}
+      aria-label={`${item.name} ${formatYen(item.price)}${item.cook ? '' : '（調理なし）'}${soldOut ? '（売り切れ）' : `${stock !== null ? (stock > 0 ? `（残り${stock}）` : `（残り0・予約で受け付け${reservations > 0 ? `・予約${reservations}` : ''}）`) : ''}${qty > 0 ? `（カートに${qty}）` : ''}`}`}
     >
       <span class={styles.menuName}>{item.name}</span>
       <span class={styles.menuPrice}>{formatYen(item.price)}</span>
       {soldOut && <span class={styles.soldOutLabel}>売り切れ</span>}
-      {stock !== null && <span class={`${styles.stockLabel} ${stock <= LOW_STOCK ? styles.stockLow : ''}`}>残り {stock}</span>}
+      {stock !== null && (
+        <span class={`${styles.stockLabel} ${stock <= LOW_STOCK ? styles.stockLow : ''}`}>
+          {stock > 0 ? `残り ${stock}` : `予約で受付${reservations > 0 ? `（予約 ${reservations}）` : ''}`}
+        </span>
+      )}
       {!item.cook && <span class={styles.noCookLabel}>調理なし</span>}
       {qty > 0 && (
         <span class={styles.qtyBadge} aria-hidden="true">
@@ -197,7 +209,7 @@ function Cart({ lines, menu }: { lines: CartLine[]; menu: MenuItem[] }) {
                   </p>
                 )}
                 {n.soldOut && <p class={styles.notice}>売り切れになりました（このまま確定できます）</p>}
-                {n.stockShort !== null && <p class={styles.notice}>残りは {n.stockShort} です（数を減らしてください）</p>}
+                {n.stockShort !== null && <p class={styles.notice}>残りは {n.stockShort} です。確定のときに、超える分を予約にするか選べます</p>}
                 {n.deleted && <p class={styles.notice}>メニューから削除されました（このまま確定できます）</p>}
               </li>
             );

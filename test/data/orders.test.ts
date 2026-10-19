@@ -592,6 +592,54 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     expect(await stockOf('y')).toBe(2);
   });
 
+  it('予約を許すと（#69）、足りない分を予約にして確定する。在庫はマイナス。行に reserved、注文に reserved: true', async () => {
+    await setMenu('y', { stock: 2 });
+    await setMenu('r', { stock: 0 });
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    const ctx = twoItems(id, 3, 1);
+    const order = await confirmOrder('e1', { ...ctx, draft: { ...ctx.draft, reserve: true } }, ALICE);
+    expect(await stockOf('y')).toBe(-1);
+    expect(await stockOf('r')).toBe(-1);
+    expect(order.reserved).toBe(true);
+    expect((await rawOrder(id)).items).toEqual([
+      { menuId: 'y', name: '焼きそば', price: 500, qty: 3, stock: true, reserved: 1 },
+      { menuId: 'r', name: 'ラムネ', price: 200, qty: 1, stock: true, reserved: 1 },
+    ]);
+    expect((await rawOrder(id)).reserved).toBe(true);
+    const read = (await findOrderOnServer('e1', id))!;
+    expect(read.reserved).toBe(true);
+    expect(read.items.map((i) => i.reserved)).toEqual([1, 1]);
+    // 取り消すと、予約の分も含めて戻る
+    await transitionOrder('e1', read, 'cancel', ALICE, [
+      { id: 'y', stock: -1 },
+      { id: 'r', stock: -1 },
+    ]);
+    expect(await stockOf('y')).toBe(2);
+    expect(await stockOf('r')).toBe(0);
+  });
+
+  it('QR なしのカートでも、予約を含めば QR をオンにして、調理中に入る（PR #73 のレビュー H1）', async () => {
+    await setMenu('y', { stock: 0 });
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    const ctx = ctxOf(id);
+    const order = await confirmOrder('e1', { ...ctx, draft: { ...ctx.draft, qr: false, reserve: true } }, ALICE);
+    expect(order).toMatchObject({ qr: true, status: 'preparing', reserved: true });
+    expect(await rawOrder(id)).toMatchObject({ qr: true, status: 'preparing', doneAt: null });
+  });
+
+  it('予約を許しても、足りていれば、予約にしない（reserved を書かない）', async () => {
+    await setMenu('y', { stock: 5 });
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    const ctx = ctxOf(id);
+    const order = await confirmOrder('e1', { ...ctx, draft: { ...ctx.draft, reserve: true } }, ALICE);
+    expect(order.reserved).toBe(false);
+    expect('reserved' in (await rawOrder(id))).toBe(false);
+    expect(await stockOf('y')).toBe(3);
+  });
+
   it('2つの端末から、最後の在庫を同時に確定しても、売りすぎない（片方だけが通り、もう片方は stock）', async () => {
     await setMenu('y', { stock: 2 });
     const alice = setUser(ALICE);

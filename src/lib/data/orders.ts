@@ -20,7 +20,7 @@ import {
 import type { ConfirmContext } from '../domain/confirmFlow';
 import { NOTE_MAX } from '../domain/note';
 import { sortOrders, transitionPatch, type OrderAction, type TimeValue } from '../domain/orderStatus';
-import { decrementsStock, findShortages, stockAdjustments } from '../domain/stock';
+import { decrementsStock, findShortages, reservedQty, stockAdjustments } from '../domain/stock';
 import { db } from '../firebase/staff';
 import { AppError, StockShortError, toAppError } from './errors';
 import { withTimeout } from './online';
@@ -48,12 +48,14 @@ export function toOrder(snap: DocumentSnapshot): Order {
       qty: i.qty,
       ...(i.cook === false ? { cook: false } : {}),
       ...(i.stock === true ? { stock: true } : {}),
+      ...(typeof i.reserved === 'number' && i.reserved > 0 ? { reserved: i.reserved } : {}),
     })),
     total: d.total,
     payment: d.payment,
     note: typeof d.note === 'string' ? d.note : '', // 無い注文（#40 より前）は、空
     status: d.status,
     calls: typeof d.calls === 'number' ? d.calls : 0, // 無い注文（#58 より前・まだ呼んでいない）は 0
+    reserved: d.reserved === true, // 予約を含む（#69）
     cancelledFrom: d.cancelledFrom ?? null,
     qr: d.qr === true,
     createdAt: toDate(d.createdAt),
@@ -94,6 +96,9 @@ export async function confirmOrder(eventId: string, ctx: ConfirmContext, uid: st
 
 const CONFIRM_ATTEMPTS = 5;
 
+/** 予約を含むか（#69） */
+const reservedAny = (lines: readonly OrderLine[]) => lines.some((l) => l.reserved);
+
 /** 1回分の確定のトランザクション */
 async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): Promise<Order> {
   const orderRef = doc(ordersCol(eventId), ctx.orderId);
@@ -116,9 +121,14 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
         if (m.exists()) stocks.set(menuIds[k]!, typeof m.get('stock') === 'number' ? (m.get('stock') as number) : null);
       });
       const shortages = findShortages(baseLines, stocks);
-      if (shortages.length > 0) throw new StockShortError(shortages); // 何も書かずに止める（注文は作られない）
+      // 足りなければ、何も書かずに止める（注文は作られない）。予約を許すとき（#69）は、足りない分を予約にして続ける
+      if (shortages.length > 0 && !ctx.draft.reserve) throw new StockShortError(shortages);
       const number = (counter.exists() ? (counter.get('n') as number) : 0) + 1;
-      lines = baseLines.map((l) => (decrementsStock(l.menuId, stocks) ? { ...l, stock: true } : l));
+      lines = baseLines.map((l) => {
+        if (!decrementsStock(l.menuId, stocks)) return l;
+        const reserved = reservedQty(l.qty, stocks.get(l.menuId));
+        return reserved > 0 ? { ...l, stock: true, reserved } : { ...l, stock: true };
+      });
       for (const l of lines) {
         if (l.stock) tx.update(doc(db, 'events', eventId, 'menu', l.menuId), { stock: (stocks.get(l.menuId) as number) - l.qty });
       }
@@ -130,16 +140,18 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
         total,
         payment,
         note,
-        status: qr ? 'preparing' : 'done',
+        // 予約を含む注文は、QR をオンにする（QR なしだと、確定と同時にお渡し済みになり、調理画面にもお客様画面にも出ないため。PR #73 のレビュー H1）
+        status: qr || reservedAny(lines) ? 'preparing' : 'done',
         cancelledFrom: null,
-        qr,
+        qr: qr || reservedAny(lines),
         createdAt: serverTimestamp(),
         readyAt: null,
-        doneAt: qr ? null : serverTimestamp(),
+        doneAt: qr || reservedAny(lines) ? null : serverTimestamp(),
         cancelledAt: null,
         createdBy: uid,
         updatedBy: uid,
         updatedAt: serverTimestamp(),
+        ...(lines.some((l) => l.reserved) ? { reserved: true } : {}), // 予約を含む（#69。含まなければ、書かない）
       });
       return { existing: null, number };
     });
@@ -153,10 +165,11 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       total,
       payment,
       note,
-      status: qr ? 'preparing' : 'done',
+      status: qr || reservedAny(lines) ? 'preparing' : 'done',
       calls: 0,
+      reserved: lines.some((l) => l.reserved),
       cancelledFrom: null,
-      qr,
+      qr: qr || reservedAny(lines),
       createdAt: null,
       readyAt: null,
       doneAt: null,

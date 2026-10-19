@@ -10,6 +10,7 @@ import { AppError } from '../../lib/data/errors';
 import { addMenuItem, addMenuItemsBulk, addStock, deleteMenuItem, moveMenuItem, updateMenuItem } from '../../lib/data/menu';
 import type { MenuItem } from '../../lib/data/types';
 import { LOW_STOCK, MENU_MAX, MENU_NAME_ERROR, MENU_NAME_MAX, parseMenuName, parsePrice, PRICE_ERROR } from '../../lib/domain/menu';
+import { reservationsOf } from '../../lib/domain/stock';
 import { useMenu } from '../../state/menu';
 import { BulkAdd } from './BulkAdd';
 import styles from './MenuPage.module.css';
@@ -328,10 +329,14 @@ function MenuRow({ item, first, last, onUpdate, onMove, onDelete, onStock }: Row
           class={styles.stockButton}
           data-managed={item.stock !== null}
           data-low={item.stock !== null && item.stock <= LOW_STOCK}
-          aria-label={item.stock === null ? `${item.name}の在庫を使う` : `${item.name}の在庫、残り${item.stock}。押すと、補充・直す`}
+          aria-label={
+            item.stock === null
+              ? `${item.name}の在庫を使う`
+              : `${item.name}の在庫、${item.stock >= 0 ? `残り${item.stock}` : `残り0・予約${reservationsOf(item.stock)}`}。押すと、補充・直す`
+          }
           onClick={onStock}
         >
-          {item.stock === null ? '在庫：使わない' : `残り ${item.stock}`}
+          {item.stock === null ? '在庫：使わない' : item.stock >= 0 ? `残り ${item.stock}` : `残り 0・予約 ${reservationsOf(item.stock)}`}
         </button>
         <span class={styles.spacer} />
         <Button variant="danger" onClick={onDelete}>

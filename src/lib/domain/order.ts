@@ -27,10 +27,6 @@ export interface CartMenuItem {
   stock?: number | null;
 }
 
-/** 売り切れか：手の「売り切れ」、または、在庫を使う商品で残りが0以下（#67。soldOut は書き換えず、残りから見せる） */
-export function isSoldOut(item: Pick<CartMenuItem, 'soldOut' | 'stock'>): boolean {
-  return item.soldOut || (item.stock != null && item.stock <= 0);
-}
 
 /** 合計：Σ price × qty（カートの保持する価格。保存される items と、必ず一致する） */
 export function calcTotal(lines: readonly Pick<CartLine, 'price' | 'qty'>[]): number {
@@ -54,7 +50,8 @@ export type CartAddResult = { ok: true; lines: CartLine[] } | { ok: false; reaso
  * 売り切れは追加しない。数量は99まで、行は50まで
  */
 export function addToCart(lines: readonly CartLine[], item: CartMenuItem): CartAddResult {
-  if (isSoldOut(item)) return { ok: false, reason: 'soldOut' };
+  // 売り切れは、手の切り替えだけ。在庫の残りが0以下でも、予約として受ける（#69。止めるときは、手で売り切れにする）
+  if (item.soldOut) return { ok: false, reason: 'soldOut' };
   const i = lines.findIndex((l) => l.menuId === item.id);
   if (i >= 0) {
     if (lines[i]!.qty >= QTY_MAX) return { ok: false, reason: 'qtyMax' };
@@ -82,16 +79,15 @@ export interface LineNotice {
   soldOut: boolean;
   /** メニューから削除された（カートの名前・価格のまま確定できる） */
   deleted: boolean;
-  /** カートの数量が、在庫の残りを超えている：その残り（#67。確定で本当に足りるかは、確定の処理が確かめる）。超えていなければ null */
+  /** カートの数量が、在庫の残りを超えている：その残り（0以上。#67）。超える分は、予約になる（#69）。超えていなければ null */
   stockShort: number | null;
 }
 
 export function lineNotice(line: CartLine, menu: readonly CartMenuItem[]): LineNotice {
   const m = menu.find((x) => x.id === line.menuId);
   if (!m) return { currentPrice: null, soldOut: false, deleted: true, stockShort: null };
-  const soldOut = isSoldOut(m);
-  const stockShort = !soldOut && m.stock != null && line.qty > m.stock ? m.stock : null;
-  return { currentPrice: m.price !== line.price ? m.price : null, soldOut, deleted: false, stockShort };
+  const stockShort = !m.soldOut && m.stock != null && line.qty > m.stock ? Math.max(0, m.stock) : null;
+  return { currentPrice: m.price !== line.price ? m.price : null, soldOut: m.soldOut, deleted: false, stockShort };
 }
 
 /** 「現在の価格にする」：その行の名前・価格を、いまのメニューに合わせる */

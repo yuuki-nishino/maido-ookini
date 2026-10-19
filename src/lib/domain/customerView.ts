@@ -10,6 +10,8 @@ export interface CustomerOrder {
   total: number;
   /** お店が「もう一度呼ぶ」を押した回数（#58。無い注文は 0） */
   calls: number;
+  /** 予約を含む（#69。在庫を用意してから調理する）。無い注文は false */
+  reserved: boolean;
 }
 
 /** 購読から届いたもの。まだ何も届いていなければ、判定の入力には、null を渡す */
@@ -100,6 +102,11 @@ export function chimeButton(status: CustomerStatus, armed: boolean, audioRunning
     return audioRunning ? 'armed' : 'retry';
   }
   return status === 'ready' && armed && !audioRunning && pending ? 'retry' : null;
+}
+
+/** 予約の案内を出すか（#69）：予約を含み、調理中のとき（できあがり以降は、もう用意できている） */
+export function showReservedNote(order: Pick<CustomerOrder, 'status' | 'reserved'>): boolean {
+  return order.reserved && order.status === 'preparing';
 }
 
 /** 「画面を開いているときだけ鳴る」の囲みを出すか（#62）。調理中だけ（できあがり以降は、もう待つ必要が無い） */

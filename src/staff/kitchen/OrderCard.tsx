@@ -43,6 +43,8 @@ export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, 
           <PaymentBadge payment={order.payment} />
           {finished && <StatusBadge status={order.status} />}
           {order.pending && <span class={styles.pending}>未送信</span>}
+          {/* 予約を含む（#69）：在庫を用意してから作る */}
+          {order.reserved && <span class={styles.reserved}>予約</span>}
         </div>
         {!finished && <span class={styles.elapsed}>{elapsedMinutes(order.createdAt, now)}分</span>}
       </div>
@@ -54,7 +56,10 @@ export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, 
               {i.name}
               {!needsCooking(i) && <span class={styles.noCookTag}>調理なし</span>}
             </span>
-            <span class={styles.qty}>× {i.qty}</span>
+            <span class={styles.qty}>
+              × {i.qty}
+              {i.reserved ? <span class={styles.reservedQty}>（予約 {i.reserved}）</span> : null}
+            </span>
           </li>
         ))}
       </ul>

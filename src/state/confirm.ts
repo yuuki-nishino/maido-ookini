@@ -101,9 +101,10 @@ export function resumePending(eventId: string, uid: string): void {
 }
 
 /** いまのカートで確定を始める。始められなければ false（送信中・前の注文の確認中など） */
-export function startConfirm(eventId: string, uid: string): boolean {
+/** reserve：在庫が足りない分を、予約として受ける（#69。「在庫が足りない」の知らせの「予約として確定する」から） */
+export function startConfirm(eventId: string, uid: string, reserve = false): boolean {
   if (cartLines.peek().length === 0 || readPending(eventId)) return false;
-  return runnerFor(eventId, uid).submit(newContext(eventId));
+  return runnerFor(eventId, uid).submit(newContext(eventId, reserve));
 }
 
 /** 墓標で拒否された注文を、同じ品目のまま、新しい orderId で確定し直す（order-confirm.md §5.1。古い pending は置き換わる） */
@@ -113,12 +114,19 @@ export function resubmitWithNewId(eventId: string, uid: string): void {
   runnerFor(eventId, uid).submit({ ...s.ctx, orderId: newOrderId(eventId), day: toDay() });
 }
 
-function newContext(eventId: string): ConfirmContext {
+function newContext(eventId: string, reserve = false): ConfirmContext {
   const items = cartLines.peek().map((l) => ({ ...l }));
   return {
     orderId: newOrderId(eventId),
     day: toDay(), // 確定ボタンの時点の日付。再試行でも変えない
-    draft: { items, total: cartTotal.peek(), payment: payment.peek(), qr: qr.peek(), note: normalizeNote(noteText.peek()) ?? '' },
+    draft: {
+      items,
+      total: cartTotal.peek(),
+      payment: payment.peek(),
+      qr: reserve || qr.peek(), // 予約は QR をオンにする（#69。確定の処理でも、予約を含めばオンにする）
+      note: normalizeNote(noteText.peek()) ?? '',
+      ...(reserve ? { reserve: true } : {}),
+    },
     tendered: payment.peek() === 'cash' ? (parseTendered(tenderedText.peek()) ?? 0) : 0,
   };
 }

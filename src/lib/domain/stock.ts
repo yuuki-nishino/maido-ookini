@@ -20,6 +20,16 @@ export function findShortages(lines: readonly { menuId: string; name: string; qt
   });
 }
 
+/** 予約の数（#69）：在庫のマイナスの分（残り −3 ＝ 予約 3）。在庫を使わない・0以上なら 0 */
+export function reservationsOf(stock: number | null): number {
+  return stock != null && stock < 0 ? -stock : 0;
+}
+
+/** その行の、予約になる数（#69）：注文の数のうち、いまの残り（0未満は0）を超える分。在庫を使わない商品は 0 */
+export function reservedQty(qty: number, stock: number | null | undefined): number {
+  return stock == null ? 0 : Math.max(0, qty - Math.max(0, stock));
+}
+
 /** 確定で、在庫を減らす行か（在庫を使う商品。足りることは、findShortages で確かめたあと） */
 export function decrementsStock(menuId: string, stocks: ReadonlyMap<string, number | null>): boolean {
   return stocks.get(menuId) != null;
