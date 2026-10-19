@@ -51,7 +51,7 @@ export function StockShortDialog({ shortages, onReserve, onReduce }: Props) {
               </li>
             ))}
           </ul>
-          <p class={styles.hint}>予約にすると、在庫を用意してから作ります。お客様の画面にも、予約であることが出ます。</p>
+          <p class={styles.hint}>予約にすると、調理中に入り、在庫を用意してから作ります。QRを発行し、お客様の画面に予約であることが出ます。</p>
           {/* お渡しの目安（#70）。任意。お客様の画面に「◯時◯分ごろ」と出る。あとから、調理画面で直せる */}
           <TextField
             kind="time"

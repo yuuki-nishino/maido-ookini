@@ -98,6 +98,9 @@ export async function confirmOrder(eventId: string, ctx: ConfirmContext, uid: st
 
 const CONFIRM_ATTEMPTS = 5;
 
+/** 予約を含むか（#69） */
+const reservedAny = (lines: readonly OrderLine[]) => lines.some((l) => l.reserved);
+
 /** 1回分の確定のトランザクション */
 async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): Promise<Order> {
   const orderRef = doc(ordersCol(eventId), ctx.orderId);
@@ -112,11 +115,13 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       if (o.exists()) return { existing: toOrder(o), number: 0 };
       const counter = await tx.get(counterRef);
       // 在庫（#68）：注文の商品のメニューを、サーバーから読む（読みは、書く前にすべて行う）。消えた商品は、在庫を見ない
+      // 1件ずつ順に読むと、品目の数だけ往復が増え、8秒の時間切れに近づくため、まとめて読む（重複なし。PR #72 のレビュー M2）
       const stocks = new Map<string, number | null>();
-      for (const l of baseLines) {
-        const m = await tx.get(doc(db, 'events', eventId, 'menu', l.menuId));
-        if (m.exists()) stocks.set(l.menuId, typeof m.get('stock') === 'number' ? (m.get('stock') as number) : null);
-      }
+      const menuIds = [...new Set(baseLines.map((l) => l.menuId))];
+      const menus = await Promise.all(menuIds.map((id) => tx.get(doc(db, 'events', eventId, 'menu', id))));
+      menus.forEach((m, k) => {
+        if (m.exists()) stocks.set(menuIds[k]!, typeof m.get('stock') === 'number' ? (m.get('stock') as number) : null);
+      });
       const shortages = findShortages(baseLines, stocks);
       // 足りなければ、何も書かずに止める（注文は作られない）。予約を許すとき（#69）は、足りない分を予約にして続ける
       if (shortages.length > 0 && !ctx.draft.reserve) throw new StockShortError(shortages);
@@ -137,12 +142,13 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
         total,
         payment,
         note,
-        status: qr ? 'preparing' : 'done',
+        // 予約を含む注文は、QR をオンにする（QR なしだと、確定と同時にお渡し済みになり、調理画面にもお客様画面にも出ないため。PR #73 のレビュー H1）
+        status: qr || reservedAny(lines) ? 'preparing' : 'done',
         cancelledFrom: null,
-        qr,
+        qr: qr || reservedAny(lines),
         createdAt: serverTimestamp(),
         readyAt: null,
-        doneAt: qr ? null : serverTimestamp(),
+        doneAt: qr || reservedAny(lines) ? null : serverTimestamp(),
         cancelledAt: null,
         createdBy: uid,
         updatedBy: uid,
@@ -163,12 +169,12 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       total,
       payment,
       note,
-      status: qr ? 'preparing' : 'done',
+      status: qr || reservedAny(lines) ? 'preparing' : 'done',
       calls: 0,
       reserved: lines.some((l) => l.reserved),
       etaAt: lines.some((l) => l.reserved) && ctx.draft.etaAt !== undefined ? new Date(ctx.draft.etaAt) : null,
       cancelledFrom: null,
-      qr,
+      qr: qr || reservedAny(lines),
       createdAt: null,
       readyAt: null,
       doneAt: null,
@@ -179,8 +185,27 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       pending: false,
     };
   } catch (e) {
+    if (e instanceof StockShortError) return confirmedDespiteShortage(orderRef, e);
     throw toAppError(e);
   }
+}
+
+/**
+ * 在庫が足りないと判定したとき（PR #72 のレビュー H1）：同じ orderId の注文が、すでに登録されていないかを、サーバーで確かめる。
+ * 時間切れのあとの「もう一度試す」では、裏で続いていた1回目が先に登録され、その在庫の減少を、2回目が「足りない」と読むことがある。
+ * トランザクションの中で投げた例外は、コミットしない（読んだ値の確かめも行われない）ため、ここで確かめる。
+ * 注文があれば、成功として返す。無ければ、在庫が足りない（そのまま投げる）。確かめられなければ、登録されたか分からないので timeout
+ * （「もう一度試す」「やめる」で確かめる）
+ */
+async function confirmedDespiteShortage(orderRef: ReturnType<typeof doc>, shortage: StockShortError): Promise<Order> {
+  let snap: DocumentSnapshot;
+  try {
+    snap = await withTimeout(getDocFromServer(orderRef));
+  } catch (e) {
+    throw new AppError('timeout', { cause: e });
+  }
+  if (snap.exists()) return toOrder(snap);
+  throw shortage;
 }
 
 /**
@@ -309,7 +334,13 @@ export function transitionOrder(
   batch.update(doc(ordersCol(eventId), order.id), data);
   for (const a of adjustments) batch.update(doc(db, 'events', eventId, 'menu', a.menuId), { stock: increment(a.delta) });
   return batch.commit().catch((e: unknown) => {
-    throw toAppError(e);
+    // 在庫の都合（メニューが消えていた〔not-found〕・残りが範囲を超えた〔permission〕）で、取り消しごと失敗させない。
+    // バッチは丸ごと失敗しているので、状態の変更だけを書き直す（状態の変更そのものが拒否されたなら、それも失敗する。PR #72 のレビュー M3）
+    const err = toAppError(e);
+    if (err.code !== 'not-found' && err.code !== 'permission') throw err;
+    return updateDoc(doc(ordersCol(eventId), order.id), data).catch((e2: unknown) => {
+      throw toAppError(e2);
+    });
   });
 }
 

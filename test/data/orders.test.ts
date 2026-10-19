@@ -641,6 +641,16 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     expect('etaAt' in (await rawOrder(id2))).toBe(false);
   });
 
+  it('QR なしのカートでも、予約を含めば QR をオンにして、調理中に入る（PR #73 のレビュー H1）', async () => {
+    await setMenu('y', { stock: 0 });
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    const ctx = ctxOf(id);
+    const order = await confirmOrder('e1', { ...ctx, draft: { ...ctx.draft, qr: false, reserve: true } }, ALICE);
+    expect(order).toMatchObject({ qr: true, status: 'preparing', reserved: true });
+    expect(await rawOrder(id)).toMatchObject({ qr: true, status: 'preparing', doneAt: null });
+  });
+
   it('予約を許しても、足りていれば、予約にしない（reserved を書かない）', async () => {
     await setMenu('y', { stock: 5 });
     setUser(ALICE);
@@ -664,6 +674,43 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     const results = await Promise.all([run(alice, ALICE), run(owner, OWNER)]);
     expect(results.sort()).toEqual(['ok', 'stock']);
     expect(await stockOf('y')).toBe(0);
+  });
+
+  it('同じ orderId の確定が並んでも（時間切れのあとの再試行）、在庫ちょうどなら、どちらも成功（片方は登録済みの注文）。二重に減らない（PR #72 のレビュー H1）', async () => {
+    await setMenu('y', { stock: 2 });
+    const alice = setUser(ALICE);
+    const id = newOrderId('e1');
+    const run = () =>
+      asUser(alice, () => confirmOrder('e1', ctxOf(id), ALICE)).then(
+        (o) => o.number,
+        (e: { code?: string }) => e.code,
+      );
+    const results = await Promise.all([run(), run()]);
+    expect(results).toEqual([1, 1]);
+    expect(await stockOf('y')).toBe(0);
+    expect(await serverState(id)).toMatchObject({ order: true, orders: 1 });
+  });
+
+  it('「やめる」（墓標）のあとの確定は、在庫を減らさない', async () => {
+    await setMenu('y', { stock: 5 });
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    expect((await voidOrFind('e1', id, ALICE)).result).toBe('voided');
+    await expect(confirmOrder('e1', ctxOf(id), ALICE)).rejects.toMatchObject({ code: 'permission' });
+    expect(await stockOf('y')).toBe(5);
+  });
+
+  it('取り消しのとき、メニューが消えていても、取り消しは反映される（在庫は書かない。PR #72 のレビュー M3）', async () => {
+    await setMenu('y', { stock: 5 });
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    await confirmOrder('e1', ctxOf(id), ALICE);
+    const order = (await findOrderOnServer('e1', id))!;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('events/e1/menu/y').delete();
+    });
+    await transitionOrder('e1', order, 'cancel', ALICE, [{ id: 'y', stock: 3 }]); // 端末のメニューは古い（まだ y がある）
+    expect((await rawOrder(id)).status).toBe('cancelled');
   });
 
   it('取り消すと戻り、取り消しを戻すとまた減る（マイナスも許す）。メニューを渡さなければ、在庫は変えない', async () => {
