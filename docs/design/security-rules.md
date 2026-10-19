@@ -44,6 +44,8 @@ Firestore のアクセス制御。データの定義は [data-model.md](./data-m
 
 ## 3. firestore.rules（初期案）
 
+> 抜粋（初期案に、各Issueの追加を反映したもの）。最新・正は `firestore.rules`。
+
 ```
 rules_version = '2';
 service cloud.firestore {
@@ -200,7 +202,7 @@ service cloud.firestore {
           && !existsAfter(subPath(eventId, 'voids', orderId))
           && request.resource.data.keys().hasOnly(
                ['number', 'day', 'items', 'total', 'payment', 'status', 'cancelledFrom', 'qr', 'note',
-                'createdAt', 'readyAt', 'doneAt', 'cancelledAt', 'createdBy', 'updatedBy', 'updatedAt'])
+                'createdAt', 'readyAt', 'doneAt', 'cancelledAt', 'createdBy', 'updatedBy', 'updatedAt', 'reserved', 'etaAt'])
           && validNote(request.resource.data)
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
@@ -232,7 +234,7 @@ service cloud.firestore {
         allow update: if isMember(eventId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
                ['status', 'payment', 'note', 'cancelledFrom', 'readyAt', 'doneAt',
-                'cancelledAt', 'updatedBy', 'updatedAt'])
+                'cancelledAt', 'updatedBy', 'updatedAt', 'etaAt'])
           && validNote(request.resource.data)
           && request.resource.data.payment in ['cash', 'paypay']
           && request.resource.data.updatedBy == request.auth.uid
@@ -379,7 +381,7 @@ service cloud.firestore {
 | R7 の追加（#58） | ✅ `calls`（もう一度呼ぶ）は、別の `allow update` で、`calls`・`updatedBy`・`updatedAt` だけを変え、できあがりのときに、ちょうど +1 だけ許す（`resource.data.get('calls', 0)`：無い注文は 0 から）。+2・減らす・数でない値・調理中／お渡し済み／取り消し・状態や支払い方法・メモと同時・メンバー以外は拒否。上の（ふつうの）更新は `calls` を `affectedKeys` に含まないため、状態の変更と一緒に `calls` を変えられない。確定（作成）では書けない。**同じ値（1 → 1）を書くのは、`calls` が変わらないため、ふつうの更新として通る**（害は無い） | orders：もう一度呼ぶ |
 | R7 の追加（#68） | ✅ 在庫は `validMenu` で、整数・-99,999〜99,999 だけを検査する。確定（注文の作成）と在庫を減らす書き込み、取り消し（状態の変更）と在庫を戻す書き込みは、同じバッチ・トランザクションで、それぞれのルールを通る。**減らした数が注文の数と一致するかは、検査しない**（ADR-0008）。消えたメニューへの書き込み・範囲外になる書き込みは、バッチごと拒否される（取り消しは、状態の変更だけを書き直す） | orders：在庫、menu：在庫 |
 | R7 の追加（#69） | ✅ 注文の作成の `hasOnly` に `reserved`（任意の真偽値）。真偽値でなければ拒否。作成のあとは変えられない（更新の `affectedKeys` に無い） | orders：在庫（予約） |
-| R7 の追加（#70） | ✅ `etaAt`（お渡しの目安）を、作成の `hasOnly` と更新の `affectedKeys` に足す。timestamp または null（無いのも可）。文字列などは拒否。メンバー以外は変えられない | orders：在庫（目安） |
+| R7 の追加（#70） | ✅ `etaAt`（お渡しの目安）を、作成の `hasOnly` と更新の `affectedKeys` に足す。timestamp または null（無いのも可）。文字列などは拒否。メンバー以外は変えられない。**予約でない注文にも書けるが、画面は予約のときしか使わない**（意図的に検査しない。値の範囲〔過去・遠い未来〕も検査しない） | orders：在庫（目安） |
 | R8 | ✅ #4・#13。#13 で、データアクセスの結合テスト（testing.md §4 の5〜7）でも、確定とやめるの並行で並存しないことを確かめた。「墓標 → 注文」「注文 → 墓標」の両方の順序で、後の書き込みが拒否される。**同じバッチで、注文と墓標を両方作る**ことも拒否する（`!exists` を `!existsAfter` にした。下記）。確定とやめるのトランザクションを並行して5回実行し、注文と墓標が並存しないことも確かめた（補助） | voids：24〜26 |
 | R9 | ✅ #4。三項演算子（カウンターが無ければ 0）で、その日の最初の注文が1番になる。トランザクション・バッチの中の `getAfter` で、カウンターを進めない・2つ進める・番号と合わない・同じ番号の2件目、は拒否される | orders：7・13〜15、カウンター：48 |
 | R10 | ✅ #3（イベント・招待の部分）。`startDate > endDate` は拒否。`createdAt + duration.value(1, 'd')`：23時間前の招待は有効、25時間前は無効 | events：31、members：34・36 |

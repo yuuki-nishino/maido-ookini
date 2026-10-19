@@ -18,6 +18,8 @@ type Props = {
 export function EtaDialog({ order, onSave, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [text, setText] = useState('');
+  // 押した時点で時刻が過ぎていたら、描き直して、エラーを出す（PR #74 のレビュー M1）
+  const [, setChecked] = useState(0);
   const open = order !== null;
 
   // 開くたびに、いまの目安を入れる
@@ -40,9 +42,10 @@ export function EtaDialog({ order, onSave, onClose }: Props) {
   function submit(e: Event) {
     e.preventDefault();
     if (!order || error !== null) return;
-    if (text === '') return onSave(order.id, null);
+    if (text === '') return order.etaAt ? onSave(order.id, null) : onClose(); // 目安が無いまま空なら、書かずに閉じる（L5）
     const r = parseEta(text, new Date());
     if (r.ok) onSave(order.id, r.etaAt);
+    else setChecked((n) => n + 1);
   }
 
   return (

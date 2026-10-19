@@ -20,6 +20,8 @@ export function StockShortDialog({ shortages, onReserve, onReduce }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const open = shortages !== null;
   const [eta, setEta] = useState('');
+  // 押した時点で時刻が過ぎていたら、描き直して、エラーを出す（エラーの判定は、描くときにしか行わないため。PR #74 のレビュー M1）
+  const [, setChecked] = useState(0);
 
   useEffect(() => {
     const el = ref.current;
@@ -78,7 +80,8 @@ export function StockShortDialog({ shortages, onReserve, onReduce }: Props) {
               onClick={() => {
                 if (eta === '') return onReserve(null);
                 const r = parseEta(eta, new Date());
-                if (r.ok) onReserve(r.etaAt); // 開いている間に、時刻を過ぎたら、押せない（下の表示が変わる）
+                if (r.ok) onReserve(r.etaAt);
+                else setChecked((n) => n + 1);
               }}
             >
               予約として確定する

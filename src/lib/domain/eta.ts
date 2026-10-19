@@ -8,7 +8,8 @@ export type EtaInput = { ok: true; etaAt: number } | { ok: false; reason: 'inval
 
 /**
  * 時刻の入力（`<input type="time">` の 'HH:MM'）を、目安の時刻（ミリ秒）にする。**その日の時刻だけ**（日本時間）。
- * いまより前（同じ分も含む）は、past（入れられない）。翌日とみなすのは、直感的に分かりにくいため、やめた（実機の確認。#70）
+ * いまより前は、past（入れられない）。いまと同じ分は受け付ける（iPhone は、空の時刻の欄を開くと、いまの時刻が入ることがあるため）。
+ * 翌日とみなすのは、直感的に分かりにくいため、やめた（実機の確認。#70）
  */
 export function parseEta(hhmm: string, now: Date): EtaInput {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
@@ -19,7 +20,7 @@ export function parseEta(hhmm: string, now: Date): EtaInput {
   const jstNow = now.getTime() + JST_OFFSET_MS;
   const jstMidnight = jstNow - (jstNow % DAY_MS);
   const eta = jstMidnight + (h * 60 + min) * 60 * 1000 - JST_OFFSET_MS;
-  return eta <= now.getTime() ? { ok: false, reason: 'past' } : { ok: true, etaAt: eta };
+  return eta + 60_000 <= now.getTime() ? { ok: false, reason: 'past' } : { ok: true, etaAt: eta };
 }
 
 /** 入力欄のエラーの文言（空・正しければ null） */
