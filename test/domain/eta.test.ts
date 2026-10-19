@@ -1,25 +1,33 @@
 // お渡しの目安（#70）。時刻は日本時間
 import { describe, expect, it } from 'vitest';
-import { etaFromTime, etaToTimeInput, formatEta } from '../../src/lib/domain/eta';
+import { etaError, etaToTimeInput, formatEta, parseEta } from '../../src/lib/domain/eta';
 
 // 2026-10-19 13:05（日本時間）＝ 04:05Z
 const now = new Date('2026-10-19T04:05:00Z');
 
-describe('etaFromTime', () => {
+describe('parseEta・etaError（その日だけ。#70）', () => {
+  const at = (s: string, n = now) => {
+    const r = parseEta(s, n);
+    return r.ok ? new Date(r.etaAt).toISOString() : r.reason;
+  };
   it('その日の時刻（日本時間）', () => {
-    expect(new Date(etaFromTime('14:30', now)!).toISOString()).toBe('2026-10-19T05:30:00.000Z');
-    expect(new Date(etaFromTime('9:05', new Date('2026-10-18T23:00:00Z'))!).toISOString()).toBe('2026-10-19T00:05:00.000Z'); // 日本時間 8:00 に入れた 9:05
+    expect(at('14:30')).toBe('2026-10-19T05:30:00.000Z');
+    expect(at('9:05', new Date('2026-10-18T23:00:00Z'))).toBe('2026-10-19T00:05:00.000Z'); // 日本時間 8:00 に入れた 9:05
   });
-  it('いまより前（同じ分も）なら、翌日', () => {
-    expect(new Date(etaFromTime('09:00', now)!).toISOString()).toBe('2026-10-20T00:00:00.000Z');
-    expect(new Date(etaFromTime('13:05', now)!).toISOString()).toBe('2026-10-20T04:05:00.000Z');
+  it('いまより前（同じ分も）は past（翌日にしない）', () => {
+    expect(at('09:00')).toBe('past');
+    expect(at('13:05')).toBe('past');
+    expect(etaError('09:00', now)).toBe('いまより後の時刻を入れてください');
   });
   it('日本時間の日付の境目（UTC では前の日）でも、日本時間の日付で考える', () => {
     // 日本時間 2026-10-20 00:30 ＝ 2026-10-19T15:30Z。「01:00」は、日本時間 10/20 の 1:00
-    expect(new Date(etaFromTime('01:00', new Date('2026-10-19T15:30:00Z'))!).toISOString()).toBe('2026-10-19T16:00:00.000Z');
+    expect(at('01:00', new Date('2026-10-19T15:30:00Z'))).toBe('2026-10-19T16:00:00.000Z');
   });
-  it('空・不正なら null', () => {
-    for (const s of ['', 'abc', '24:00', '12:60', '1230', '12:3']) expect(etaFromTime(s, now)).toBeNull();
+  it('不正なら invalid。空はエラーにしない（未定）', () => {
+    for (const s of ['abc', '24:00', '12:60', '1230', '12:3']) expect(at(s)).toBe('invalid');
+    expect(etaError('abc', now)).toBe('時刻を入れてください');
+    expect(etaError('', now)).toBeNull();
+    expect(etaError('14:30', now)).toBeNull();
   });
 });
 

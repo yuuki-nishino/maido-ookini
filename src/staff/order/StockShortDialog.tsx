@@ -4,7 +4,7 @@ import type { TargetedEvent } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
-import { etaFromTime } from '../../lib/domain/eta';
+import { etaError, parseEta } from '../../lib/domain/eta';
 import type { StockShortage } from '../../lib/domain/stock';
 import styles from './StockShortDialog.module.css';
 
@@ -31,7 +31,7 @@ export function StockShortDialog({ shortages, onReserve, onReduce }: Props) {
     if (!open && el.open) el.close();
   }, [open]);
 
-  const etaValid = eta === '' || etaFromTime(eta, new Date()) !== null;
+  const error = etaError(eta, new Date());
 
   return (
     <dialog ref={ref} class={styles.dialog} aria-labelledby="stock-short-title" onCancel={(e) => (e.preventDefault(), onReduce())}>
@@ -56,17 +56,31 @@ export function StockShortDialog({ shortages, onReserve, onReduce }: Props) {
           <TextField
             kind="time"
             label="お渡しの目安（任意）"
-            hint="お客様の画面に出ます。あとから調理画面で直せます"
+            hint="今日の、いまより後の時刻。お客様の画面に出ます。あとから調理画面で直せます"
             value={eta}
-            error={etaValid ? null : '時刻を入れてください'}
+            error={error}
             onInput={(e: TargetedEvent<HTMLInputElement>) => setEta(e.currentTarget.value)}
           />
+          {/* iPhone は、時刻の欄を空にできないため、ボタンで空にする（#70 の実機の確認） */}
+          {eta !== '' && (
+            <Button variant="secondary" onClick={() => setEta('')}>
+              目安を空にする（未定）
+            </Button>
+          )}
           {/* 数を減らす（安全な方）を左、予約として確定する（主の操作）を右に、離して置く */}
           <div class={styles.actions}>
             <Button variant="secondary" onClick={onReduce}>
               数を減らす
             </Button>
-            <Button variant="primary" disabled={!etaValid} onClick={() => onReserve(eta === '' ? null : etaFromTime(eta, new Date()))}>
+            <Button
+              variant="primary"
+              disabled={error !== null}
+              onClick={() => {
+                if (eta === '') return onReserve(null);
+                const r = parseEta(eta, new Date());
+                if (r.ok) onReserve(r.etaAt); // 開いている間に、時刻を過ぎたら、押せない（下の表示が変わる）
+              }}
+            >
               予約として確定する
             </Button>
           </div>

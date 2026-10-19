@@ -1,10 +1,10 @@
-// 予約のお渡しの目安を直す（#70）。調理画面の予約のカードから開く。時刻を入れて保存、または「目安を消す」（未定）。
+// 予約のお渡しの目安を直す（#70）。調理画面の予約のカードから開く。時刻を入れて保存、または「目安を消す」（未定。iPhone は、時刻の欄を空にできないため、ボタンで消す）。
 // 保存は、待たずに閉じる（オフラインでも受け付ける）。お客様の画面にも、すぐ反映される
 import type { TargetedEvent } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
-import { etaFromTime, etaToTimeInput } from '../../lib/domain/eta';
+import { etaError, etaToTimeInput, parseEta } from '../../lib/domain/eta';
 import styles from './NoteDialog.module.css';
 
 type Props = {
@@ -35,12 +35,14 @@ export function EtaDialog({ order, onSave, onClose }: Props) {
     if (!open && el.open) el.close();
   }, [open, order?.id]);
 
-  const valid = text === '' || etaFromTime(text, new Date()) !== null;
+  const error = etaError(text, new Date());
 
   function submit(e: Event) {
     e.preventDefault();
-    if (!order || !valid) return;
-    onSave(order.id, text === '' ? null : etaFromTime(text, new Date()));
+    if (!order || error !== null) return;
+    if (text === '') return onSave(order.id, null);
+    const r = parseEta(text, new Date());
+    if (r.ok) onSave(order.id, r.etaAt);
   }
 
   return (
@@ -53,16 +55,21 @@ export function EtaDialog({ order, onSave, onClose }: Props) {
           <TextField
             kind="time"
             label="お渡しの目安（時刻）"
-            hint="お客様の画面に「◯時◯分ごろ」と出ます。いまより前の時刻は、翌日になります。空にすると、未定になります"
+            hint="今日の、いまより後の時刻。お客様の画面に「◯時◯分ごろ」と出ます"
             value={text}
-            error={valid ? null : '時刻を入れてください'}
+            error={error}
             onInput={(e: TargetedEvent<HTMLInputElement>) => setText(e.currentTarget.value)}
           />
+          {order.etaAt && (
+            <Button variant="secondary" block onClick={() => onSave(order.id, null)}>
+              目安を消す（未定にする）
+            </Button>
+          )}
           <div class={styles.actions}>
             <Button variant="secondary" onClick={onClose}>
               やめる
             </Button>
-            <Button type="submit" variant="primary" disabled={!valid}>
+            <Button type="submit" variant="primary" disabled={error !== null}>
               保存する
             </Button>
           </div>
