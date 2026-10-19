@@ -142,6 +142,7 @@ describe('parseStock（在庫の数。#67）', () => {
     [' 30 ', 30],
     ['1,000', 1000],
     ['20食', 20],
+    ['20 食', 20],
     ['12枚', 12],
     [String(STOCK_MAX), STOCK_MAX],
   ])('%s → %d', (s, v) => expect(parseStock(s)).toBe(v));
