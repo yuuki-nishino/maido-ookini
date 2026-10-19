@@ -195,3 +195,26 @@
   font-size: var(--fs-sm);
   font-weight: 800;
 }
+
+/* 予約のお渡しの目安（#70） */
+.eta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.etaButton {
+  min-height: var(--tap-min);
+  padding: var(--sp-1) var(--sp-3);
+  border: 2px solid var(--color-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}

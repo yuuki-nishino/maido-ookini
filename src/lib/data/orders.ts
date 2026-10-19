@@ -13,6 +13,7 @@ import {
   updateDoc,
   where,
   writeBatch,
+  Timestamp as FsTimestamp,
   type DocumentSnapshot,
   type QuerySnapshot,
   type Timestamp,
@@ -56,6 +57,7 @@ export function toOrder(snap: DocumentSnapshot): Order {
     status: d.status,
     calls: typeof d.calls === 'number' ? d.calls : 0, // 無い注文（#58 より前・まだ呼んでいない）は 0
     reserved: d.reserved === true, // 予約を含む（#69）
+    etaAt: toDate(d.etaAt), // お渡しの目安（#70）
     cancelledFrom: d.cancelledFrom ?? null,
     qr: d.qr === true,
     createdAt: toDate(d.createdAt),
@@ -152,6 +154,8 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
         updatedBy: uid,
         updatedAt: serverTimestamp(),
         ...(lines.some((l) => l.reserved) ? { reserved: true } : {}), // 予約を含む（#69。含まなければ、書かない）
+        // お渡しの目安（#70）。予約を含むときだけ書く
+        ...(lines.some((l) => l.reserved) && ctx.draft.etaAt !== undefined ? { etaAt: FsTimestamp.fromMillis(ctx.draft.etaAt) } : {}),
       });
       return { existing: null, number };
     });
@@ -168,6 +172,7 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       status: qr || reservedAny(lines) ? 'preparing' : 'done',
       calls: 0,
       reserved: lines.some((l) => l.reserved),
+      etaAt: lines.some((l) => l.reserved) && ctx.draft.etaAt !== undefined ? new Date(ctx.draft.etaAt) : null,
       cancelledFrom: null,
       qr: qr || reservedAny(lines),
       createdAt: null,
@@ -353,6 +358,20 @@ export function changePayment(eventId: string, orderId: string, payment: Payment
 export function changeNote(eventId: string, orderId: string, note: string, uid: string): Promise<void> {
   if (note.length > NOTE_MAX) return Promise.reject(validationError(`メモは${NOTE_MAX}文字までです`));
   return updateDoc(doc(ordersCol(eventId), orderId), { note, updatedBy: uid, updatedAt: serverTimestamp() }).catch((e: unknown) => {
+    throw toAppError(e);
+  });
+}
+
+/**
+ * 予約のお渡しの目安を直す（#70。調理画面の「目安を直す」）。etaAt：ミリ秒。null で消す（未定）。
+ * 状態は変えない。オフラインでも受け付ける。複数人が同時に直したときは、後から届いた方が勝つ
+ */
+export function changeEta(eventId: string, orderId: string, etaAt: number | null, uid: string): Promise<void> {
+  return updateDoc(doc(ordersCol(eventId), orderId), {
+    etaAt: etaAt === null ? null : FsTimestamp.fromMillis(etaAt),
+    updatedBy: uid,
+    updatedAt: serverTimestamp(),
+  }).catch((e: unknown) => {
     throw toAppError(e);
   });
 }

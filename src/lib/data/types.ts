@@ -49,6 +49,8 @@ export interface Order {
   calls: number;
   /** 予約を含む注文（#69。在庫が足りない分を予約として確定した）。無い注文は false */
   reserved: boolean;
+  /** 予約のお渡しの目安（#70）。未定・予約でない注文は null */
+  etaAt: Date | null;
   cancelledFrom: Exclude<OrderStatus, 'cancelled'> | null;
   qr: boolean;
   createdAt: Date | null;

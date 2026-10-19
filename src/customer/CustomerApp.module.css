@@ -52,6 +52,14 @@
   font-weight: 700;
 }
 
+.eta {
+  display: block;
+  margin-top: var(--sp-1);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .recall {
   margin: 0;
   padding: var(--sp-2) var(--sp-4);
