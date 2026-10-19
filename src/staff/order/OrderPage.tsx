@@ -6,7 +6,8 @@ import { Empty, ErrorView, Loading } from '../../components/Feedback';
 import { TextField } from '../../components/TextField';
 import type { MenuItem } from '../../lib/data/types';
 import { normalizeNote, NOTE_MAX } from '../../lib/domain/note';
-import { addTendered, calcChange, formatYen, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
+import { LOW_STOCK } from '../../lib/domain/menu';
+import { addTendered, calcChange, formatYen, isSoldOut, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
 import {
   addItemToCart,
   applyLineCurrentPrice,
@@ -108,17 +109,21 @@ export function OrderPage({ eventId }: { eventId: string }) {
 }
 
 function MenuButton({ item, qty, onAdd }: { item: MenuItem; qty: number; onAdd: () => void }) {
+  // 売り切れ：手の「売り切れ」、または、在庫の残りが0（#67。補充すれば、自動で戻る）
+  const soldOut = isSoldOut(item);
+  const stock = !soldOut && item.stock !== null ? item.stock : null;
   return (
     <button
       type="button"
       class={`${styles.menuItem} ${qty > 0 ? styles.inCart : ''}`}
-      disabled={item.soldOut}
+      disabled={soldOut}
       onClick={onAdd}
-      aria-label={`${item.name} ${formatYen(item.price)}${item.cook ? '' : '（調理なし）'}${item.soldOut ? '（売り切れ）' : qty > 0 ? `（カートに${qty}）` : ''}`}
+      aria-label={`${item.name} ${formatYen(item.price)}${item.cook ? '' : '（調理なし）'}${soldOut ? '（売り切れ）' : `${stock !== null ? `（残り${stock}）` : ''}${qty > 0 ? `（カートに${qty}）` : ''}`}`}
     >
       <span class={styles.menuName}>{item.name}</span>
       <span class={styles.menuPrice}>{formatYen(item.price)}</span>
-      {item.soldOut && <span class={styles.soldOutLabel}>売り切れ</span>}
+      {soldOut && <span class={styles.soldOutLabel}>売り切れ</span>}
+      {stock !== null && <span class={`${styles.stockLabel} ${stock <= LOW_STOCK ? styles.stockLow : ''}`}>残り {stock}</span>}
       {!item.cook && <span class={styles.noCookLabel}>調理なし</span>}
       {qty > 0 && (
         <span class={styles.qtyBadge} aria-hidden="true">
@@ -190,6 +195,7 @@ function Cart({ lines, menu }: { lines: CartLine[]; menu: MenuItem[] }) {
                   </p>
                 )}
                 {n.soldOut && <p class={styles.notice}>売り切れになりました（このまま確定できます）</p>}
+                {n.stockShort !== null && <p class={styles.notice}>残りは {n.stockShort} です（数を減らしてください）</p>}
                 {n.deleted && <p class={styles.notice}>メニューから削除されました（このまま確定できます）</p>}
               </li>
             );

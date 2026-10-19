@@ -1,0 +1,46 @@
+/* 在庫の変更（#67）。見た目は、メモのダイアログ（kitchen/NoteDialog）にそろえる */
+.dialog {
+  width: min(100% - 2 * var(--sp-4), 440px);
+  padding: var(--sp-6) var(--sp-5) var(--sp-5);
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-float);
+}
+
+.dialog::backdrop {
+  background: rgb(43 38 34 / 0.55);
+}
+
+.form {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.title {
+  font-family: var(--font-hand);
+  font-size: var(--fs-xl);
+  font-weight: 400;
+  -webkit-text-stroke: var(--hand-bold) currentColor;
+  paint-order: stroke fill;
+}
+
+.now {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+/* やめると、在庫を使わない（消す操作）は離して置く */
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-6);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--color-line);
+}

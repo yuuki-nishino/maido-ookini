@@ -23,6 +23,13 @@ export interface CartMenuItem {
   price: number;
   soldOut: boolean;
   cook?: boolean;
+  /** 在庫（いまの残り。#67）。null・無い＝在庫を使わない */
+  stock?: number | null;
+}
+
+/** 売り切れか：手の「売り切れ」、または、在庫を使う商品で残りが0以下（#67。soldOut は書き換えず、残りから見せる） */
+export function isSoldOut(item: Pick<CartMenuItem, 'soldOut' | 'stock'>): boolean {
+  return item.soldOut || (item.stock != null && item.stock <= 0);
 }
 
 /** 合計：Σ price × qty（カートの保持する価格。保存される items と、必ず一致する） */
@@ -47,7 +54,7 @@ export type CartAddResult = { ok: true; lines: CartLine[] } | { ok: false; reaso
  * 売り切れは追加しない。数量は99まで、行は50まで
  */
 export function addToCart(lines: readonly CartLine[], item: CartMenuItem): CartAddResult {
-  if (item.soldOut) return { ok: false, reason: 'soldOut' };
+  if (isSoldOut(item)) return { ok: false, reason: 'soldOut' };
   const i = lines.findIndex((l) => l.menuId === item.id);
   if (i >= 0) {
     if (lines[i]!.qty >= QTY_MAX) return { ok: false, reason: 'qtyMax' };
@@ -75,12 +82,16 @@ export interface LineNotice {
   soldOut: boolean;
   /** メニューから削除された（カートの名前・価格のまま確定できる） */
   deleted: boolean;
+  /** カートの数量が、在庫の残りを超えている：その残り（#67。確定で本当に足りるかは、確定の処理が確かめる）。超えていなければ null */
+  stockShort: number | null;
 }
 
 export function lineNotice(line: CartLine, menu: readonly CartMenuItem[]): LineNotice {
   const m = menu.find((x) => x.id === line.menuId);
-  if (!m) return { currentPrice: null, soldOut: false, deleted: true };
-  return { currentPrice: m.price !== line.price ? m.price : null, soldOut: m.soldOut, deleted: false };
+  if (!m) return { currentPrice: null, soldOut: false, deleted: true, stockShort: null };
+  const soldOut = isSoldOut(m);
+  const stockShort = !soldOut && m.stock != null && line.qty > m.stock ? m.stock : null;
+  return { currentPrice: m.price !== line.price ? m.price : null, soldOut, deleted: false, stockShort };
 }
 
 /** 「現在の価格にする」：その行の名前・価格を、いまのメニューに合わせる */

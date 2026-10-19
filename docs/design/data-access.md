@@ -25,7 +25,7 @@ type OrderStatus = 'preparing' | 'ready' | 'done' | 'cancelled';
 interface EventDoc { id: string; name: string; startDate: Day; endDate: Day; floatCash: number; ownerUid: string; deleting: boolean }
 interface Member { uid: string; role: 'owner' | 'member'; displayName: string; email: string }
 interface Invite { email: string; createdAt: Date | null; expiresAt: Date | null } // expiresAt = createdAt + 1日（画面表示用に計算）
-interface MenuItem { id: string; name: string; price: number; order: number; soldOut: boolean; cook: boolean }
+interface MenuItem { id: string; name: string; price: number; order: number; soldOut: boolean; cook: boolean; stock: number | null } // stock：在庫（いまの残り。#67）。null＝使わない
 interface OrderLine { menuId: string; name: string; price: number; qty: number; cook?: boolean }
 interface Order {
   id: string; number: number; day: Day; items: OrderLine[]; total: number;
@@ -79,7 +79,8 @@ type Unsubscribe = () => void;
 |---|---|
 | `watchMenu(eventId, cb: (items: MenuItem[]) => void, onError): Unsubscribe` | `order` 昇順、同じ値のときは `id` 順に整えて返す（`sortMenu`）。書き込み関数の Promise は、サーバーが受け取ったときに終わる（オフラインなら、つながるまで終わらない）。画面は待たずに進め、拒否だけを `catch` で知らせる（#10） |
 | `addMenuItem(eventId, { name, price }, items): Promise<void>` | `order = 最大 + 10`。100件を超える場合は、`AppError('validation')` |
-| `updateMenuItem(eventId, id, patch: Partial<Pick<MenuItem, 'name'\|'price'\|'soldOut'\|'cook'>>): Promise<void>` | 検証してから書く（価格は1〜100,000） |
+| `updateMenuItem(eventId, id, patch: Partial<Pick<MenuItem, 'name'\|'price'\|'soldOut'\|'cook'\|'stock'>>): Promise<void>` | 検証してから書く（価格は1〜100,000。在庫は 0〜99,999 の整数か null〔使わない〕。#67） |
+| `addStock(eventId, item, n): Promise<void>` | 在庫の補充（#67）。`increment(n)` で足す（ほかの端末の変更と重なっても、足した分が消えない）。在庫を使っていない商品・n が 0 や範囲外・合計が 99,999 を超える（端末の値で判定。最終の判定はルール）なら `AppError('validation')` |
 | `moveMenuItem(eventId, id, dir: 'up' \| 'down', items): Promise<void>` | 並びを入れ替え、**全件の `order` を10, 20, 30…に振り直す**（1バッチ。同じ値になっていても動く）。計算は `reorderMenu`（`lib/domain/menu.ts`）で、値が変わる品だけを書く |
 | `deleteMenuItem(eventId, id): Promise<void>` | 過去の注文は、書き写し済みのため影響なし |
 | `addMenuItemsBulk(eventId, lines: ParsedLine[], items): Promise<void>` | `parseBulkMenu` の結果を、1バッチで追加（`order` は、今の最大の続きから10ずつ）。合計が100件を超える場合は、`AppError('validation')`（1件も書かない）。各行も、ここで検査する（#11） |

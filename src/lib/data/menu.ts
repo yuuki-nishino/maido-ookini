@@ -1,7 +1,7 @@
 // メニュー（data-access.md §3.4）
 // メニューの書き込みは、オンライン必須ではない（§3.9）。オフラインでも受け付け、つながったときに送られる。
 // 返す Promise は、サーバーが受け取ったときに終わる。画面は待たずに進め、拒否されたときだけ知らせる（catch）
-import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, increment, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import {
   MENU_MAX,
   MENU_NAME_ERROR,
@@ -13,6 +13,8 @@ import {
   PRICE_MIN,
   reorderMenu,
   sortMenu,
+  STOCK_ERROR,
+  STOCK_MAX,
   type ParsedLine,
 } from '../domain/menu';
 import { db } from '../firebase/staff';
@@ -35,6 +37,7 @@ export function watchMenu(eventId: string, cb: (items: MenuItem[]) => void, onEr
             order: Number(d.get('order') ?? 0),
             soldOut: d.get('soldOut') === true,
             cook: d.get('cook') !== false,
+            stock: typeof d.get('stock') === 'number' ? Number(d.get('stock')) : null, // 在庫（#67）。無い・null は、使わない
           })),
         ),
       ),
@@ -54,8 +57,11 @@ function validationError(message: string): AppError {
   return Object.assign(new AppError('validation'), { message });
 }
 
-/** 名前・価格の検査（ルールの validMenu と同じ条件）。正しければ null */
-function checkPatch(patch: { name?: string; price?: number }): AppError | null {
+const validStock = (n: number) => Number.isInteger(n) && n >= 0 && n <= STOCK_MAX;
+
+/** 名前・価格・在庫の検査（ルールの validMenu と同じ条件）。正しければ null */
+function checkPatch(patch: { name?: string; price?: number; stock?: number | null }): AppError | null {
+  if (patch.stock !== undefined && patch.stock !== null && !validStock(patch.stock)) return validationError(STOCK_ERROR);
   if (patch.name !== undefined && parseMenuName(patch.name) !== patch.name) return validationError(MENU_NAME_ERROR);
   if (patch.price !== undefined && !(Number.isInteger(patch.price) && patch.price >= PRICE_MIN && patch.price <= PRICE_MAX)) {
     return validationError(PRICE_ERROR);
@@ -94,11 +100,24 @@ export function addMenuItemsBulk(eventId: string, lines: readonly ParsedLine[], 
   return write(batch.commit());
 }
 
-/** 名前・価格・売り切れ・調理の要否の更新。検査してから書く */
-export function updateMenuItem(eventId: string, id: string, patch: Partial<Pick<MenuItem, 'name' | 'price' | 'soldOut' | 'cook'>>): Promise<void> {
+/** 名前・価格・売り切れ・調理の要否・在庫（いまの残りにする・null で使わない）の更新。検査してから書く */
+export function updateMenuItem(eventId: string, id: string, patch: Partial<Pick<MenuItem, 'name' | 'price' | 'soldOut' | 'cook' | 'stock'>>): Promise<void> {
   const invalid = checkPatch(patch);
   if (invalid) return Promise.reject(invalid);
   return write(updateDoc(doc(menuCol(eventId), id), patch));
+}
+
+/**
+ * 在庫の補充（#67）：いまの残りに、n を足す（increment。ほかの端末の注文で減っている最中でも、足した分が消えない）。
+ * 在庫を使っていない商品には、足さない（AppError('validation')。先に「残りを直す」で使い始める）
+ */
+export function addStock(eventId: string, item: MenuItem, n: number): Promise<void> {
+  if (item.stock === null) return Promise.reject(validationError('在庫を使っていない商品です'));
+  if (!validStock(n) || n === 0) return Promise.reject(validationError(`補充する数は、1〜${STOCK_MAX.toLocaleString('ja-JP')}の整数で入れてください`));
+  // 端末の値で判定する（最終の判定は、ルール）。ほかの端末が「在庫を使わない」にした直後に足すと、使う状態に戻る
+  // （increment は、null に対して n を書く）。まれなので許容する（screens.md §3.8）
+  if (item.stock + n > STOCK_MAX) return Promise.reject(validationError(`残りは${STOCK_MAX.toLocaleString('ja-JP')}までです`));
+  return write(updateDoc(doc(menuCol(eventId), item.id), { stock: increment(n) }));
 }
 
 /** 上・下へ1つ動かし、全件の order を振り直す（変わる品だけを、1バッチで） */

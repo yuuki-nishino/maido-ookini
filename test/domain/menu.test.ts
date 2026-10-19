@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextMenuOrder, parseBulkMenu, parseMenuName, parsePrice, reorderMenu, sortMenu } from '../../src/lib/domain';
+import { nextMenuOrder, parseBulkMenu, parseMenuName, parsePrice, parseStock, reorderMenu, sortMenu, STOCK_MAX } from '../../src/lib/domain';
 
 describe('parseMenuName', () => {
   it('前後の空白を除き、1〜40文字（絵文字は2文字）', () => {
@@ -132,4 +132,19 @@ describe('parseBulkMenu（data-model.md §5.6、testing.md §2）', () => {
     expect(r.ok).toHaveLength(1);
     expect(r.errors).toEqual([{ line: 2, text, reason: expect.stringContaining(reason) }]);
   });
+});
+
+describe('parseStock（在庫の数。#67）', () => {
+  it.each([
+    ['0', 0],
+    ['50', 50],
+    ['１２', 12],
+    [' 30 ', 30],
+    ['1,000', 1000],
+    ['20食', 20],
+    ['20 食', 20],
+    ['12枚', 12],
+    [String(STOCK_MAX), STOCK_MAX],
+  ])('%s → %d', (s, v) => expect(parseStock(s)).toBe(v));
+  it.each(['', '-1', '1.5', 'abc', '1,00', '1 2', String(STOCK_MAX + 1)])('%s は拒否', (s) => expect(parseStock(s)).toBeNull());
 });

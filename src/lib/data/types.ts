@@ -64,6 +64,8 @@ export interface MenuItem {
   soldOut: boolean;
   /** 調理が必要か（#52）。グッズなどは false。無い（古い）商品は true */
   cook: boolean;
+  /** 在庫（いまの残り。#67）。null＝在庫を使わない（無い〔古い〕商品も null） */
+  stock: number | null;
 }
 
 /** レジ締め（data-model.md §2.8。closings/{day}） */

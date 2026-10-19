@@ -1,4 +1,4 @@
-// メニュー（screens.md §3.8）。追加・名前と価格のインライン編集・▲▼の並べ替え・売り切れ・削除。
+// メニュー（screens.md §3.8）。追加・名前と価格のインライン編集・▲▼の並べ替え・売り切れ・在庫（#67）・削除。
 // 書き込みは待たずに進める（オフラインでも受け付ける。data-access.md §3.9）。拒否されたときだけ知らせる
 import type { TargetedEvent, TargetedKeyboardEvent } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
@@ -7,12 +7,13 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Empty, ErrorView, Loading } from '../../components/Feedback';
 import { TextField } from '../../components/TextField';
 import { AppError } from '../../lib/data/errors';
-import { addMenuItem, addMenuItemsBulk, deleteMenuItem, moveMenuItem, updateMenuItem } from '../../lib/data/menu';
+import { addMenuItem, addMenuItemsBulk, addStock, deleteMenuItem, moveMenuItem, updateMenuItem } from '../../lib/data/menu';
 import type { MenuItem } from '../../lib/data/types';
-import { MENU_MAX, MENU_NAME_ERROR, MENU_NAME_MAX, parseMenuName, parsePrice, PRICE_ERROR } from '../../lib/domain/menu';
+import { LOW_STOCK, MENU_MAX, MENU_NAME_ERROR, MENU_NAME_MAX, parseMenuName, parsePrice, PRICE_ERROR } from '../../lib/domain/menu';
 import { useMenu } from '../../state/menu';
 import { BulkAdd } from './BulkAdd';
 import styles from './MenuPage.module.css';
+import { StockDialog } from './StockDialog';
 
 function messageOf(e: unknown): string {
   if (e instanceof AppError && e.code === 'validation') return e.message;
@@ -26,6 +27,8 @@ export function MenuPage({ eventId }: { eventId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<MenuItem | null>(null);
   const [bulk, setBulk] = useState(false);
+  // 在庫を変える商品の id（開いている間に、ほかの端末の注文で残りが変わっても、最新の値を見せる）
+  const [stockId, setStockId] = useState<string | null>(null);
 
   /** 書き込みを待たずに進め、拒否されたら知らせる */
   const send = (p: Promise<void>) => {
@@ -81,6 +84,7 @@ export function MenuPage({ eventId }: { eventId: string }) {
               onUpdate={(patch) => send(updateMenuItem(eventId, item.id, patch))}
               onMove={(dir) => send(moveMenuItem(eventId, item.id, dir, items))}
               onDelete={() => setDeleting(item)}
+              onStock={() => setStockId(item.id)}
             />
           ))}
         </ul>
@@ -99,6 +103,19 @@ export function MenuPage({ eventId }: { eventId: string }) {
       >
         これまでの注文と売上には、影響しません。
       </ConfirmDialog>
+
+      <StockDialog
+        item={items.find((i) => i.id === stockId) ?? null}
+        onClose={() => setStockId(null)}
+        onAdd={(item, n) => {
+          setStockId(null);
+          send(addStock(eventId, item, n));
+        }}
+        onSet={(item, stock) => {
+          setStockId(null);
+          send(updateMenuItem(eventId, item.id, { stock }));
+        }}
+      />
     </section>
   );
 }
@@ -168,9 +185,11 @@ type RowProps = {
   onUpdate: (patch: Partial<Pick<MenuItem, 'name' | 'price' | 'soldOut' | 'cook'>>) => void;
   onMove: (dir: 'up' | 'down') => void;
   onDelete: () => void;
+  /** 在庫の変更（#67） */
+  onStock: () => void;
 };
 
-function MenuRow({ item, first, last, onUpdate, onMove, onDelete }: RowProps) {
+function MenuRow({ item, first, last, onUpdate, onMove, onDelete, onStock }: RowProps) {
   // 入力中の値。フォーカスが外れたときに保存する。
   // - ほかのメンバーの変更は、編集中の欄でなければ、すぐ反映する（item が変わったときだけ同期。確定の直後に元の値へ戻さない。PR #36 のレビュー M2）
   // - 確定のときは、フォーカスしたときの値（base）と比べる。変えていなければ書かない（ほかの人の変更を、古い値で上書きしない。M1）
@@ -302,6 +321,17 @@ function MenuRow({ item, first, last, onUpdate, onMove, onDelete }: RowProps) {
           onClick={() => onUpdate({ cook: !item.cook })}
         >
           {item.cook ? '調理あり' : '調理なし'}
+        </button>
+        {/* 在庫（#67）：使っていなければ「在庫なし」、使っていれば残り。押すと、補充・直す・使わないのダイアログ */}
+        <button
+          type="button"
+          class={styles.stockButton}
+          data-managed={item.stock !== null}
+          data-low={item.stock !== null && item.stock <= LOW_STOCK}
+          aria-label={item.stock === null ? `${item.name}の在庫を使う` : `${item.name}の在庫、残り${item.stock}。押すと、補充・直す`}
+          onClick={onStock}
+        >
+          {item.stock === null ? '在庫：使わない' : `残り ${item.stock}`}
         </button>
         <span class={styles.spacer} />
         <Button variant="danger" onClick={onDelete}>

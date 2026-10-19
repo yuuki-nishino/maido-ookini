@@ -4,6 +4,10 @@ export const MENU_NAME_MAX = 40;
 export const PRICE_MIN = 1;
 export const PRICE_MAX = 100_000;
 export const ORDER_STEP = 10;
+/** 在庫（いまの残り）の上限（#67） */
+export const STOCK_MAX = 99_999;
+/** 残りがこの数以下なら、注文画面で目立たせる（補充の目安。#67） */
+export const LOW_STOCK = 5;
 
 /** 並べ替えに使う最小限の形 */
 export interface MenuOrderItem {
@@ -31,6 +35,21 @@ export function parsePrice(input: string): number | null {
   const price = Number(digits);
   return Number.isSafeInteger(price) && price >= PRICE_MIN && price <= PRICE_MAX ? price : null;
 }
+
+/** 在庫の数（いまの残り・補充する数）：0〜99,999 の整数。全角数字・3桁ごとのカンマを受け付ける。不正なら null（#67） */
+export function parseStock(input: string): number | null {
+  const text = input
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/，/g, ',')
+    .trim()
+    .replace(/(個|食|枚|本|杯)$/, '')
+    .trim(); // 「20 食」も通す（数字の間の空白は、通さない）
+  if (!/^(\d+|\d{1,3}(,\d{3})+)$/.test(text)) return null;
+  const n = Number(text.replace(/,/g, ''));
+  return Number.isSafeInteger(n) && n <= STOCK_MAX ? n : null;
+}
+
+export const STOCK_ERROR = `0〜${STOCK_MAX.toLocaleString('ja-JP')}の整数で入れてください`;
 
 export const MENU_NAME_ERROR = `名前は1〜${MENU_NAME_MAX}文字で入れてください`;
 export const PRICE_ERROR = `価格は${PRICE_MIN}〜${PRICE_MAX.toLocaleString('ja-JP')}円の整数で入れてください`;

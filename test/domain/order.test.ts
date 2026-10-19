@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addToCart,
+  isSoldOut,
   applyCurrentPrice,
   calcChange,
   calcTotal,
@@ -106,9 +107,16 @@ describe('changeQty / removeLine', () => {
 describe('lineNotice / applyCurrentPrice', () => {
   const line = { menuId: 'y', name: '焼きそば', price: 500, qty: 2 };
   it('価格の変更・売り切れ・削除を知らせる', () => {
-    expect(lineNotice(line, [yakisoba])).toEqual({ currentPrice: null, soldOut: false, deleted: false });
-    expect(lineNotice(line, [{ ...yakisoba, price: 600, soldOut: true }])).toEqual({ currentPrice: 600, soldOut: true, deleted: false });
-    expect(lineNotice(line, [])).toEqual({ currentPrice: null, soldOut: false, deleted: true });
+    expect(lineNotice(line, [yakisoba])).toEqual({ currentPrice: null, soldOut: false, deleted: false, stockShort: null });
+    expect(lineNotice(line, [{ ...yakisoba, price: 600, soldOut: true }])).toEqual({ currentPrice: 600, soldOut: true, deleted: false, stockShort: null });
+    expect(lineNotice(line, [])).toEqual({ currentPrice: null, soldOut: false, deleted: true, stockShort: null });
+  });
+  it('在庫（#67）：カートの数量が残りを超えたら、その残りを知らせる。残り0は売り切れ。在庫を使わない商品は知らせない', () => {
+    // line は 2個
+    expect(lineNotice(line, [{ ...yakisoba, stock: 1 }]).stockShort).toBe(1);
+    expect(lineNotice(line, [{ ...yakisoba, stock: 2 }]).stockShort).toBeNull();
+    expect(lineNotice(line, [{ ...yakisoba, stock: 0 }])).toMatchObject({ soldOut: true, stockShort: null });
+    expect(lineNotice(line, [{ ...yakisoba, stock: null }]).stockShort).toBeNull();
   });
   it('「現在の価格にする」で、その行の名前・価格をいまのメニューに合わせる。数量はそのまま', () => {
     expect(applyCurrentPrice([line], 'y', [{ ...yakisoba, name: '焼きそば大', price: 600 }])).toEqual([
@@ -160,5 +168,20 @@ describe('parseTendered / formatYen', () => {
   });
   it('¥1,200', () => {
     expect(formatYen(1200)).toBe('¥1,200');
+  });
+});
+
+describe('isSoldOut（在庫。#67）', () => {
+  it('手の売り切れ、または、在庫を使う商品で残りが0以下なら、売り切れ', () => {
+    expect(isSoldOut({ soldOut: true, stock: null })).toBe(true);
+    expect(isSoldOut({ soldOut: false, stock: 0 })).toBe(true);
+    expect(isSoldOut({ soldOut: false, stock: -1 })).toBe(true);
+    expect(isSoldOut({ soldOut: false, stock: 1 })).toBe(false);
+    expect(isSoldOut({ soldOut: false, stock: null })).toBe(false);
+    expect(isSoldOut({ soldOut: false })).toBe(false); // 無い（古い）商品
+  });
+  it('残り0の商品は、カートに入れられない（売り切れ）', () => {
+    expect(addToCart([], { ...yakisoba, stock: 0 })).toEqual({ ok: false, reason: 'soldOut' });
+    expect(addToCart([], { ...yakisoba, stock: 3 }).ok).toBe(true);
   });
 });
