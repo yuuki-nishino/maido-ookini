@@ -13,6 +13,7 @@ import { selectEvent } from '../../state/event';
 import { flushHold, holds, startHold } from '../../state/hold';
 import { applyHolds } from '../../state/holdStore';
 import { report } from '../../state/kitchenWrite';
+import { useMenu } from '../../state/menu';
 import { activeOrders, activeOrdersError } from '../../state/orders';
 import { showToast } from '../../state/toast';
 import { OrderCard } from './OrderCard';
@@ -44,6 +45,8 @@ export function KitchenPage({ eventId, uid }: { eventId: string; uid: string }) 
   const [cancelling, setCancelling] = useState<{ id: string; number: number } | null>(null);
   const [qrOrder, setQrOrder] = useState<Order | null>(null);
   const [noteOrder, setNoteOrder] = useState<Order | null>(null);
+  // 取り消し・取り消しを戻すで、在庫を戻す・減らすため（#68）。読み込めていなければ、在庫は変えない
+  const menu = useMenu(eventId).items ?? undefined;
 
   // 「済みも表示」を入れたときだけ、今日の全状態を購読する
   useEffect(() => {
@@ -82,7 +85,7 @@ export function KitchenPage({ eventId, uid }: { eventId: string; uid: string }) 
     else if (isHoldable(action) && startHold({ eventId, uid, order, action })) return; // 猶予の間は書かない（「元に戻す」は UndoBar）
     else {
       flushHold(order.id); // 保留中の操作が、先に書かれるように（順序を保つ）
-      report(transitionOrder(eventId, order, action, uid), order.number);
+      report(transitionOrder(eventId, order, action, uid, menu), order.number);
     }
   };
   const togglePayment = (order: Order) => report(changePayment(eventId, order.id, order.payment === 'cash' ? 'paypay' : 'cash', uid), order.number);
@@ -194,7 +197,7 @@ export function KitchenPage({ eventId, uid }: { eventId: string; uid: string }) 
           if (plan === 'already') showToast('success', `${target.number}番は、すでに取り消されています`);
           // 画面に出ていない（済みも表示を閉じている間に、ほかのメンバーが「渡した」にした、など）。事実は言い切らない（PR #42 の再レビュー R1）
           else if (plan === 'missing' || !latest) showToast('error', `${target.number}番の状態が変わったようです。画面を確かめてください`);
-          else report(transitionOrder(eventId, latest, 'cancel', uid), target.number);
+          else report(transitionOrder(eventId, latest, 'cancel', uid, menu), target.number);
         }}
       >
         取り消した注文は、売上に含まれません。あとから「取り消しを戻す」で、元に戻せます。

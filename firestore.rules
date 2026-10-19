@@ -54,8 +54,9 @@ service cloud.firestore {
           && d.price is int && d.price >= 1 && d.price <= 100000
           && d.order is number && d.soldOut is bool
           && d.get('cook', true) is bool // 調理が必要か（#52）。無い（古い）商品も、通る
-          // 在庫（いまの残り。#67）。無い・null は、使わない。0〜99,999 の整数
-          && (d.get('stock', null) == null || (d.stock is int && d.stock >= 0 && d.stock <= 99999));
+          // 在庫（いまの残り。#67）。無い・null は、使わない。整数で、99,999 まで。
+          // 取り消しを戻すで減らすと、マイナスになりうる（オフラインで溜めるため、確かめられない。#68）ので、-99,999 まで許す
+          && (d.get('stock', null) == null || (d.stock is int && d.stock >= -99999 && d.stock <= 99999));
     }
 
     function validClosing(d, day) {

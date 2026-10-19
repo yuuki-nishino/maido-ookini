@@ -12,6 +12,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   type DocumentSnapshot,
   type QuerySnapshot,
   type Timestamp,
@@ -19,10 +20,11 @@ import {
 import type { ConfirmContext } from '../domain/confirmFlow';
 import { NOTE_MAX } from '../domain/note';
 import { sortOrders, transitionPatch, type OrderAction, type TimeValue } from '../domain/orderStatus';
+import { decrementsStock, findShortages, stockAdjustments } from '../domain/stock';
 import { db } from '../firebase/staff';
-import { AppError, toAppError } from './errors';
+import { AppError, StockShortError, toAppError } from './errors';
 import { withTimeout } from './online';
-import type { Order, OrderLine, Payment, Unsubscribe } from './types';
+import type { MenuItem, Order, OrderLine, Payment, Unsubscribe } from './types';
 
 const ordersCol = (eventId: string) => collection(db, 'events', eventId, 'orders');
 
@@ -39,7 +41,14 @@ export function toOrder(snap: DocumentSnapshot): Order {
     id: snap.id,
     number: d.number,
     day: d.day,
-    items: (d.items as OrderLine[]).map((i) => ({ menuId: i.menuId, name: i.name, price: i.price, qty: i.qty, ...(i.cook === false ? { cook: false } : {}) })),
+    items: (d.items as OrderLine[]).map((i) => ({
+      menuId: i.menuId,
+      name: i.name,
+      price: i.price,
+      qty: i.qty,
+      ...(i.cook === false ? { cook: false } : {}),
+      ...(i.stock === true ? { stock: true } : {}),
+    })),
     total: d.total,
     payment: d.payment,
     note: typeof d.note === 'string' ? d.note : '', // 無い注文（#40 より前）は、空
@@ -91,13 +100,28 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
   const counterRef = doc(db, 'events', eventId, 'counters', ctx.day);
   const { items, total, payment, qr } = ctx.draft;
   const note = ctx.draft.note ?? ''; // 古い pending（メモの項目なし）は、空
-  const lines = items.map((i) => ({ menuId: i.menuId, name: i.name, price: i.price, qty: i.qty, ...(i.cook === false ? { cook: false } : {}) }));
+  const baseLines = items.map((i) => ({ menuId: i.menuId, name: i.name, price: i.price, qty: i.qty, ...(i.cook === false ? { cook: false } : {}) }));
+  let lines: OrderLine[] = baseLines;
   try {
     const result = await runTransaction(db, async (tx) => {
       const o = await tx.get(orderRef);
       if (o.exists()) return { existing: toOrder(o), number: 0 };
       const counter = await tx.get(counterRef);
+      // 在庫（#68）：注文の商品のメニューを、サーバーから読む（読みは、書く前にすべて行う）。消えた商品は、在庫を見ない
+      // 1件ずつ順に読むと、品目の数だけ往復が増え、8秒の時間切れに近づくため、まとめて読む（重複なし。PR #72 のレビュー M2）
+      const stocks = new Map<string, number | null>();
+      const menuIds = [...new Set(baseLines.map((l) => l.menuId))];
+      const menus = await Promise.all(menuIds.map((id) => tx.get(doc(db, 'events', eventId, 'menu', id))));
+      menus.forEach((m, k) => {
+        if (m.exists()) stocks.set(menuIds[k]!, typeof m.get('stock') === 'number' ? (m.get('stock') as number) : null);
+      });
+      const shortages = findShortages(baseLines, stocks);
+      if (shortages.length > 0) throw new StockShortError(shortages); // 何も書かずに止める（注文は作られない）
       const number = (counter.exists() ? (counter.get('n') as number) : 0) + 1;
+      lines = baseLines.map((l) => (decrementsStock(l.menuId, stocks) ? { ...l, stock: true } : l));
+      for (const l of lines) {
+        if (l.stock) tx.update(doc(db, 'events', eventId, 'menu', l.menuId), { stock: (stocks.get(l.menuId) as number) - l.qty });
+      }
       tx.set(counterRef, { n: number });
       tx.set(orderRef, {
         number,
@@ -143,8 +167,27 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       pending: false,
     };
   } catch (e) {
+    if (e instanceof StockShortError) return confirmedDespiteShortage(orderRef, e);
     throw toAppError(e);
   }
+}
+
+/**
+ * 在庫が足りないと判定したとき（PR #72 のレビュー H1）：同じ orderId の注文が、すでに登録されていないかを、サーバーで確かめる。
+ * 時間切れのあとの「もう一度試す」では、裏で続いていた1回目が先に登録され、その在庫の減少を、2回目が「足りない」と読むことがある。
+ * トランザクションの中で投げた例外は、コミットしない（読んだ値の確かめも行われない）ため、ここで確かめる。
+ * 注文があれば、成功として返す。無ければ、在庫が足りない（そのまま投げる）。確かめられなければ、登録されたか分からないので timeout
+ * （「もう一度試す」「やめる」で確かめる）
+ */
+async function confirmedDespiteShortage(orderRef: ReturnType<typeof doc>, shortage: StockShortError): Promise<Order> {
+  let snap: DocumentSnapshot;
+  try {
+    snap = await withTimeout(getDocFromServer(orderRef));
+  } catch (e) {
+    throw new AppError('timeout', { cause: e });
+  }
+  if (snap.exists()) return toOrder(snap);
+  throw shortage;
 }
 
 /**
@@ -245,9 +288,17 @@ const timeValue = (v: TimeValue) => (v === 'now' ? serverTimestamp() : null);
 /**
  * 状態を変える（完成・渡した・取り消しなど。data-model.md §3）。できない遷移は、書く前に AppError('validation')。
  * 書き込みは、オフラインでも受け付ける（サーバーが受け取るまで、Promise は終わらない）。
- * 画面は待たずに進め、拒否されたとき（他のメンバーが先に別の操作をした場合など）に知らせる
+ * 画面は待たずに進め、拒否されたとき（他のメンバーが先に別の操作をした場合など）に知らせる。
+ * 取り消し・取り消しを戻すでは、確定で減らした在庫を、同じ書き込み（バッチ）で戻す・減らす（#68。menu：いまのメニュー。
+ * 無ければ、在庫は変えない）
  */
-export function transitionOrder(eventId: string, order: Pick<Order, 'id' | 'status' | 'cancelledFrom'>, action: OrderAction, uid: string): Promise<void> {
+export function transitionOrder(
+  eventId: string,
+  order: Pick<Order, 'id' | 'status' | 'cancelledFrom'> & { items?: Order['items'] },
+  action: OrderAction,
+  uid: string,
+  menu?: readonly Pick<MenuItem, 'id' | 'stock'>[],
+): Promise<void> {
   const patch = transitionPatch(order, action);
   if (!patch) return Promise.reject(validationError('その操作は、いまの状態ではできません'));
   const data: Record<string, unknown> = { status: patch.status, updatedBy: uid, updatedAt: serverTimestamp() };
@@ -255,8 +306,23 @@ export function transitionOrder(eventId: string, order: Pick<Order, 'id' | 'stat
   if (patch.readyAt !== undefined) data.readyAt = timeValue(patch.readyAt);
   if (patch.doneAt !== undefined) data.doneAt = timeValue(patch.doneAt);
   if (patch.cancelledAt !== undefined) data.cancelledAt = timeValue(patch.cancelledAt);
-  return updateDoc(doc(ordersCol(eventId), order.id), data).catch((e: unknown) => {
-    throw toAppError(e);
+  const adjustments = menu && order.items ? stockAdjustments(order.items, action, menu) : [];
+  if (adjustments.length === 0) {
+    return updateDoc(doc(ordersCol(eventId), order.id), data).catch((e: unknown) => {
+      throw toAppError(e);
+    });
+  }
+  const batch = writeBatch(db);
+  batch.update(doc(ordersCol(eventId), order.id), data);
+  for (const a of adjustments) batch.update(doc(db, 'events', eventId, 'menu', a.menuId), { stock: increment(a.delta) });
+  return batch.commit().catch((e: unknown) => {
+    // 在庫の都合（メニューが消えていた〔not-found〕・残りが範囲を超えた〔permission〕）で、取り消しごと失敗させない。
+    // バッチは丸ごと失敗しているので、状態の変更だけを書き直す（状態の変更そのものが拒否されたなら、それも失敗する。PR #72 のレビュー M3）
+    const err = toAppError(e);
+    if (err.code !== 'not-found' && err.code !== 'permission') throw err;
+    return updateDoc(doc(ordersCol(eventId), order.id), data).catch((e2: unknown) => {
+      throw toAppError(e2);
+    });
   });
 }
 

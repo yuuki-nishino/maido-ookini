@@ -100,6 +100,17 @@ describe('createConfirmRunner', () => {
     expect(confirmOrder).toHaveBeenCalledTimes(1);
   });
 
+  it('在庫が足りない（code: stock。#68）：確かめ直さずに idle（知らせと、足りない商品）。pending を消す', async () => {
+    const shortages = [{ menuId: 'y', name: '焼きそば', stock: 1, qty: 2 }];
+    const voidExists = vi.fn(async () => false);
+    const { runner, state, saved } = setup({ confirmOrder: async () => Promise.reject({ code: 'stock', shortages }), voidExists });
+    runner.submit(ctx);
+    await flush();
+    expect(state()).toEqual({ kind: 'idle', notice: 'stock', shortages });
+    expect(voidExists).not.toHaveBeenCalled();
+    expect(saved.at(-1)).toBeNull(); // pending を消した
+  });
+
   it('permission で拒否：墓標があれば voided（やめた注文）、なければ permission', async () => {
     const a = setup({ confirmOrder: async () => Promise.reject({ code: 'permission' }), voidExists: async () => true });
     a.runner.submit(ctx);

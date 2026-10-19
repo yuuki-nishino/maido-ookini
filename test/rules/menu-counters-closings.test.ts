@@ -82,6 +82,13 @@ describe('メニュー', () => {
     await assertFails(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: increment(0.5) }));
   });
 
+  it('在庫（#68）：取り消しを戻すで減らすと、マイナスになってもよい（-99,999 まで）', async () => {
+    const db = as(env, ALICE);
+    await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m2'), menuItem({ stock: 1 })));
+    await assertSucceeds(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: increment(-3) }));
+    await assertSucceeds(updateDoc(doc(db, 'events/e1/menu/m2'), { stock: -99999 }));
+  });
+
   it('在庫（#67）：補充で 99,999 を超えると拒否', async () => {
     const db = as(env, ALICE);
     await assertSucceeds(setDoc(doc(db, 'events/e1/menu/m2'), menuItem({ stock: 99990 })));
@@ -104,7 +111,7 @@ describe('メニュー', () => {
     ['order が文字列', { order: '10' }],
     ['soldOut が真偽値でない', { soldOut: 0 }],
     ['cook が真偽値でない', { cook: 'no' }],
-    ['在庫が負', { stock: -1 }],
+    ['在庫が -100,000', { stock: -100000 }],
     ['在庫が100,000', { stock: 100000 }],
     ['在庫が小数', { stock: 1.5 }],
     ['在庫が文字列', { stock: '10' }],

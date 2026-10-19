@@ -2,6 +2,7 @@
 // 副作用（Firestore・タイマー・localStorage）は外側（state/confirm.ts）で行う
 import type { Day } from './day';
 import type { CartLine } from './order';
+import type { StockShortage } from './stock';
 
 /** 確定ボタンの時点で固定する、カートの内容（order-confirm.md §3 の draft） */
 export interface ConfirmDraft {
@@ -35,8 +36,11 @@ export interface ConfirmedOrder {
 export type FailReason = 'offline' | 'timeout' | 'permission' | 'conflict' | 'voided';
 
 export type ConfirmState =
-  /** notice：voided＝やめた扱いにした。blocked＝このイベントでは、いま注文を登録できない（メンバーでない・削除中。PR #39 のレビュー C3） */
-  | { kind: 'idle'; notice: 'voided' | 'blocked' | null }
+  /**
+   * notice：voided＝やめた扱いにした。blocked＝このイベントでは、いま注文を登録できない（メンバーでない・削除中。PR #39 のレビュー C3）。
+   * stock＝在庫が足りず、確定しなかった（#68。注文は作られていない。カートは残す）。shortages：足りなかった商品
+   */
+  | { kind: 'idle'; notice: 'voided' | 'blocked' | 'stock' | null; shortages?: StockShortage[] }
   | { kind: 'submitting'; ctx: ConfirmContext }
   | { kind: 'failed'; ctx: ConfirmContext; reason: FailReason }
   | { kind: 'abandoning'; ctx: ConfirmContext }
@@ -54,6 +58,8 @@ export type ConfirmEvent =
   | { type: 'retry' }
   | { type: 'succeeded'; order: ConfirmedOrder }
   | { type: 'failed'; reason: FailReason }
+  /** 在庫が足りず、確定しなかった（#68）。サーバーの残りで確かめて、何も書かずに止めたので、確かめ直さずに戻す */
+  | { type: 'stockShort'; shortages: StockShortage[] }
   /** やめる（failed・decide から）→ void-or-find */
   | { type: 'abandon' }
   /** やめた扱いと分かっている注文（failed・voided）を、問い合わせずに閉じる。カートは残す（PR #39 のレビュー C1） */
@@ -92,6 +98,8 @@ export function confirmReducer(s: ConfirmState, e: ConfirmEvent): ConfirmState {
       return s.kind === 'submitting' ? { kind: 'done', ctx: s.ctx, order: e.order, recovered: false } : s;
     case 'failed':
       return s.kind === 'submitting' ? { kind: 'failed', ctx: s.ctx, reason: e.reason } : s;
+    case 'stockShort':
+      return s.kind === 'submitting' ? { kind: 'idle', notice: 'stock', shortages: e.shortages } : s;
     case 'abandon':
       return (s.kind === 'failed' && s.reason !== 'voided') || s.kind === 'decide' ? { kind: 'abandoning', ctx: s.ctx } : s;
     case 'dismiss':
