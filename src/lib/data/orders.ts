@@ -96,6 +96,9 @@ export async function confirmOrder(eventId: string, ctx: ConfirmContext, uid: st
 
 const CONFIRM_ATTEMPTS = 5;
 
+/** 予約を含むか（#69） */
+const reservedAny = (lines: readonly OrderLine[]) => lines.some((l) => l.reserved);
+
 /** 1回分の確定のトランザクション */
 async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): Promise<Order> {
   const orderRef = doc(ordersCol(eventId), ctx.orderId);
@@ -137,12 +140,13 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
         total,
         payment,
         note,
-        status: qr ? 'preparing' : 'done',
+        // 予約を含む注文は、QR をオンにする（QR なしだと、確定と同時にお渡し済みになり、調理画面にもお客様画面にも出ないため。PR #73 のレビュー H1）
+        status: qr || reservedAny(lines) ? 'preparing' : 'done',
         cancelledFrom: null,
-        qr,
+        qr: qr || reservedAny(lines),
         createdAt: serverTimestamp(),
         readyAt: null,
-        doneAt: qr ? null : serverTimestamp(),
+        doneAt: qr || reservedAny(lines) ? null : serverTimestamp(),
         cancelledAt: null,
         createdBy: uid,
         updatedBy: uid,
@@ -161,11 +165,11 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       total,
       payment,
       note,
-      status: qr ? 'preparing' : 'done',
+      status: qr || reservedAny(lines) ? 'preparing' : 'done',
       calls: 0,
       reserved: lines.some((l) => l.reserved),
       cancelledFrom: null,
-      qr,
+      qr: qr || reservedAny(lines),
       createdAt: null,
       readyAt: null,
       doneAt: null,

@@ -619,6 +619,16 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     expect(await stockOf('r')).toBe(0);
   });
 
+  it('QR なしのカートでも、予約を含めば QR をオンにして、調理中に入る（PR #73 のレビュー H1）', async () => {
+    await setMenu('y', { stock: 0 });
+    setUser(ALICE);
+    const id = newOrderId('e1');
+    const ctx = ctxOf(id);
+    const order = await confirmOrder('e1', { ...ctx, draft: { ...ctx.draft, qr: false, reserve: true } }, ALICE);
+    expect(order).toMatchObject({ qr: true, status: 'preparing', reserved: true });
+    expect(await rawOrder(id)).toMatchObject({ qr: true, status: 'preparing', doneAt: null });
+  });
+
   it('予約を許しても、足りていれば、予約にしない（reserved を書かない）', async () => {
     await setMenu('y', { stock: 5 });
     setUser(ALICE);

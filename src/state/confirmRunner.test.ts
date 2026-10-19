@@ -111,6 +111,14 @@ describe('createConfirmRunner', () => {
     expect(saved.at(-1)).toBeNull(); // pending を消した
   });
 
+  it('予約の確定（draft.reserve。#69）は、そのまま pending に残る（再試行・復元でも予約のまま）', async () => {
+    const reserveCtx = { ...ctx, draft: { ...ctx.draft, reserve: true } };
+    const { runner, saved } = setup({});
+    runner.submit(reserveCtx);
+    await flush();
+    expect(saved[0]).toMatchObject({ ctx: { draft: { reserve: true } }, abandoning: false });
+  });
+
   it('permission で拒否：墓標があれば voided（やめた注文）、なければ permission', async () => {
     const a = setup({ confirmOrder: async () => Promise.reject({ code: 'permission' }), voidExists: async () => true });
     a.runner.submit(ctx);

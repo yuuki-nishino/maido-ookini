@@ -209,7 +209,7 @@ function Cart({ lines, menu }: { lines: CartLine[]; menu: MenuItem[] }) {
                   </p>
                 )}
                 {n.soldOut && <p class={styles.notice}>売り切れになりました（このまま確定できます）</p>}
-                {n.stockShort !== null && <p class={styles.notice}>残りは {n.stockShort} です。超える分は、予約になります</p>}
+                {n.stockShort !== null && <p class={styles.notice}>残りは {n.stockShort} です。確定のときに、超える分を予約にするか選べます</p>}
                 {n.deleted && <p class={styles.notice}>メニューから削除されました（このまま確定できます）</p>}
               </li>
             );

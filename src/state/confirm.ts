@@ -123,7 +123,7 @@ function newContext(eventId: string, reserve = false): ConfirmContext {
       items,
       total: cartTotal.peek(),
       payment: payment.peek(),
-      qr: qr.peek(),
+      qr: reserve || qr.peek(), // 予約は QR をオンにする（#69。確定の処理でも、予約を含めばオンにする）
       note: normalizeNote(noteText.peek()) ?? '',
       ...(reserve ? { reserve: true } : {}),
     },
