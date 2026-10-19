@@ -157,10 +157,12 @@ service cloud.firestore {
           && !existsAfter(subPath(eventId, 'voids', orderId))
           && request.resource.data.keys().hasOnly(
                ['number', 'day', 'items', 'total', 'payment', 'status', 'cancelledFrom', 'qr', 'note',
-                'createdAt', 'readyAt', 'doneAt', 'cancelledAt', 'createdBy', 'updatedBy', 'updatedAt', 'reserved'])
+                'createdAt', 'readyAt', 'doneAt', 'cancelledAt', 'createdBy', 'updatedBy', 'updatedAt', 'reserved', 'etaAt'])
           && validNote(request.resource.data)
           // 予約を含む注文（#69）。任意。作成のあとは変えない（更新の affectedKeys に無い）
           && request.resource.data.get('reserved', false) is bool
+          // 予約のお渡しの目安（#70）。任意。timestamp または null
+          && (request.resource.data.get('etaAt', null) == null || request.resource.data.etaAt is timestamp)
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
           && request.resource.data.createdAt == request.time
@@ -187,11 +189,12 @@ service cloud.firestore {
           && getAfter(subPath(eventId, 'counters', request.resource.data.day)).data.n
                == request.resource.data.number;
 
-        // 作成後に変えられるのは、状態・支払い方法・メモ・時刻・更新者だけ
+        // 作成後に変えられるのは、状態・支払い方法・メモ・時刻・お渡しの目安（#70）・更新者だけ
         allow update: if isMember(eventId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
                ['status', 'payment', 'note', 'cancelledFrom', 'readyAt', 'doneAt',
-                'cancelledAt', 'updatedBy', 'updatedAt'])
+                'cancelledAt', 'updatedBy', 'updatedAt', 'etaAt'])
+          && (request.resource.data.get('etaAt', null) == null || request.resource.data.etaAt is timestamp)
           && validNote(request.resource.data)
           && request.resource.data.payment in ['cash', 'paypay']
           && request.resource.data.updatedBy == request.auth.uid

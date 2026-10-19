@@ -457,6 +457,23 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     await assertFails(updateDoc(doc(db, 'events/e1/orders/o2'), { reserved: false, updatedBy: ALICE, updatedAt: serverTimestamp() }));
   });
 
+  it('お渡しの目安（etaAt。#70）：作成のとき timestamp・null で書ける（文字列は拒否）。あとから直せ、null で消せる（文字列は拒否）', async () => {
+    const db = as(env, ALICE);
+    const ok = writeBatch(db);
+    ok.set(doc(db, 'events/e1/counters', DAY), { n: 2 });
+    ok.set(doc(db, 'events/e1/orders/o2'), newOrder(ALICE, 2, true, { reserved: true, etaAt: new Date('2026-10-19T05:30:00Z') }));
+    await assertSucceeds(ok.commit());
+    const bad = writeBatch(db);
+    bad.set(doc(db, 'events/e1/counters', DAY), { n: 3 });
+    bad.set(doc(db, 'events/e1/orders/o3'), newOrder(ALICE, 3, true, { reserved: true, etaAt: '14:30' }));
+    await assertFails(bad.commit());
+    const o2 = doc(db, 'events/e1/orders/o2');
+    await assertSucceeds(updateDoc(o2, { etaAt: new Date('2026-10-19T06:00:00Z'), updatedBy: ALICE, updatedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(o2, { etaAt: null, updatedBy: ALICE, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(o2, { etaAt: '15:00', updatedBy: ALICE, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(as(env, BOB), 'events/e1/orders/o2'), { etaAt: null, updatedBy: BOB, updatedAt: serverTimestamp() }));
+  });
+
   it('メンバーでない人は、在庫を変えられない', async () => {
     await assertFails(updateDoc(doc(as(env, BOB), 'events/e1/menu/y'), { stock: increment(-1) }));
   });

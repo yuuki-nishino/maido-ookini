@@ -96,7 +96,7 @@ export function OrderPage({ eventId }: { eventId: string }) {
       {/* 在庫が足りない（#69）：画面の中央のダイアログで、予約にするか、数を減らすかを選ぶ */}
       <StockShortDialog
         shortages={confirmState.value.kind === 'idle' && confirmState.value.notice === 'stock' ? (confirmState.value.shortages ?? []) : null}
-        onReserve={() => uid && startConfirm(eventId, uid, true)}
+        onReserve={(etaAt) => uid && startConfirm(eventId, uid, true, etaAt)}
         onReduce={closeConfirm}
       />
 

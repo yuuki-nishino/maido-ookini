@@ -12,6 +12,8 @@ export interface CustomerOrder {
   calls: number;
   /** 予約を含む（#69。在庫を用意してから調理する）。無い注文は false */
   reserved: boolean;
+  /** 予約のお渡しの目安（#70。ミリ秒）。未定は null */
+  etaAt: number | null;
 }
 
 /** 購読から届いたもの。まだ何も届いていなければ、判定の入力には、null を渡す */

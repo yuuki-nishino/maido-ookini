@@ -16,6 +16,7 @@ function toCustomerOrder(d: Record<string, unknown>): CustomerOrder | null {
     total: d.total,
     calls: typeof d.calls === 'number' ? d.calls : 0, // 「もう一度呼ぶ」の回数（#58。無い注文は 0）
     reserved: d.reserved === true, // 予約を含む（#69）
+    etaAt: typeof (d.etaAt as { toMillis?: unknown } | null)?.toMillis === 'function' ? (d.etaAt as { toMillis(): number }).toMillis() : null, // お渡しの目安（#70）
     items: items.map((i: { name?: unknown; price?: unknown; qty?: unknown }) => ({
       name: String(i.name ?? ''),
       price: Number(i.price ?? 0),

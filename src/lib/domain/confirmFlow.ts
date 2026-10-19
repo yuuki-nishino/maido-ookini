@@ -14,6 +14,8 @@ export interface ConfirmDraft {
   note?: string;
   /** 在庫が足りない分を、予約として受ける（#69。足りないと知らせたあと、スタッフが選んだとき）。無い＝受けない */
   reserve?: boolean;
+  /** 予約のお渡しの目安（#70。ミリ秒）。予約として確定するときに入れる。無い＝未定 */
+  etaAt?: number;
 }
 
 /** 1回の確定の文脈。再試行でも orderId・day は変えない */

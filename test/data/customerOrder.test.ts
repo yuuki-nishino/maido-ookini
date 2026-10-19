@@ -81,7 +81,7 @@ describe('watchOrder（お客様）', () => {
     const snap = await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order));
     w.unsub();
     const order = snap.kind === 'doc' ? snap.order : null;
-    expect(Object.keys(order!).sort()).toEqual(['calls', 'items', 'number', 'reserved', 'status', 'total']);
+    expect(Object.keys(order!).sort()).toEqual(['calls', 'etaAt', 'items', 'number', 'reserved', 'status', 'total']);
     expect(JSON.stringify(snap)).not.toMatch(/paypay|辛さ抜き|staff-uid/);
   });
 
@@ -109,6 +109,18 @@ describe('watchOrder（お客様）', () => {
     w.unsub();
     if (first.kind !== 'doc' || called.kind !== 'doc' || !first.order || !called.order) throw new Error('unreachable');
     expect(shouldRecall(first.order, called.order)).toBe(true);
+  });
+
+  it('予約（reserved）とお渡しの目安（etaAt。ミリ秒）が、お客様に届く（#69・#70）', async () => {
+    const eta = Date.parse('2026-10-19T05:30:00Z');
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('events/e1/orders/o1').update({ reserved: true, etaAt: Timestamp.fromMillis(eta) });
+    });
+    setCustomer();
+    const w = watch('e1', 'o1');
+    const snap = await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order?.reserved && !s.fromCache));
+    w.unsub();
+    expect(snap.kind === 'doc' && snap.order).toMatchObject({ reserved: true, etaAt: eta });
   });
 
   it('存在しない注文は、サーバーの結果（fromCache = false）で notFound になる', async () => {

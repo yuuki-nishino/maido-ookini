@@ -20,7 +20,7 @@ import {
   type CustomerOrder,
 } from '../../src/lib/domain/customerView';
 
-const order: CustomerOrder = { number: 7, status: 'preparing', items: [{ name: '焼きそば', price: 500, qty: 2 }], total: 1000, calls: 0, reserved: false };
+const order: CustomerOrder = { number: 7, status: 'preparing', items: [{ name: '焼きそば', price: 500, qty: 2 }], total: 1000, calls: 0, reserved: false, etaAt: null };
 
 describe('customerView', () => {
   it('まだ何も届いていない → loading。8秒続いたら slow（「通信が不安定です」を添える）', () => {
@@ -54,7 +54,7 @@ describe('customerView', () => {
 
   it('お客様に渡す注文の型には、支払い方法・メモ・スタッフの情報が無い', () => {
     const keys = Object.keys(order).sort();
-    expect(keys).toEqual(['calls', 'items', 'number', 'reserved', 'status', 'total']);
+    expect(keys).toEqual(['calls', 'etaAt', 'items', 'number', 'reserved', 'status', 'total']);
   });
 });
 

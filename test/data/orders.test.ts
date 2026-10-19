@@ -14,7 +14,7 @@ vi.mock('../../src/lib/firebase/staff', async () => {
   };
 });
 
-const { changeNote, changePayment, confirmOrder, findOrderOnServer, newOrderId, recallOrder, transitionOrder, voidExistsOnServer, voidOrFind, watchActiveOrders, watchOrdersOfDay } =
+const { changeEta, changeNote, changePayment, confirmOrder, findOrderOnServer, newOrderId, recallOrder, transitionOrder, voidExistsOnServer, voidOrFind, watchActiveOrders, watchOrdersOfDay } =
   await import('../../src/lib/data/orders');
 type ConfirmContext = import('../../src/lib/domain/confirmFlow').ConfirmContext;
 
@@ -617,6 +617,28 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     ]);
     expect(await stockOf('y')).toBe(2);
     expect(await stockOf('r')).toBe(0);
+  });
+
+  it('お渡しの目安（#70）：予約のときだけ etaAt を書く。changeEta で直せ、null で消せる', async () => {
+    await setMenu('y', { stock: 0 });
+    setUser(ALICE);
+    const eta = Date.parse('2026-10-19T05:30:00Z');
+    const id = newOrderId('e1');
+    const ctx = ctxOf(id);
+    const order = await confirmOrder('e1', { ...ctx, draft: { ...ctx.draft, reserve: true, etaAt: eta } }, ALICE);
+    expect(order.etaAt?.getTime()).toBe(eta);
+    expect((await findOrderOnServer('e1', id))!.etaAt?.getTime()).toBe(eta);
+    const later = Date.parse('2026-10-19T06:00:00Z');
+    await changeEta('e1', id, later, ALICE);
+    expect((await findOrderOnServer('e1', id))!.etaAt?.getTime()).toBe(later);
+    await changeEta('e1', id, null, ALICE);
+    expect((await findOrderOnServer('e1', id))!.etaAt).toBeNull();
+    // 予約でない（足りている）注文には、目安を書かない
+    await setMenu('y', { stock: 10 });
+    const id2 = newOrderId('e1');
+    const ctx2 = ctxOf(id2);
+    await confirmOrder('e1', { ...ctx2, draft: { ...ctx2.draft, reserve: true, etaAt: eta } }, ALICE);
+    expect('etaAt' in (await rawOrder(id2))).toBe(false);
   });
 
   it('予約を許しても、足りていれば、予約にしない（reserved を書かない）', async () => {

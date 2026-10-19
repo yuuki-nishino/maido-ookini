@@ -6,6 +6,7 @@ import { PaymentBadge, StatusBadge } from '../../components/Badge';
 import type { Order } from '../../lib/data/types';
 import { ACTION_LABEL, availableActions, dayMark, elapsedMinutes, type OrderAction } from '../../lib/domain/orderStatus';
 import { needsCooking } from '../../lib/domain/cooking';
+import { formatEta } from '../../lib/domain/eta';
 import { formatYen } from '../../lib/domain/order';
 import { recallState } from '../../lib/domain/recall';
 import { browserOnline } from '../../state/online';
@@ -24,9 +25,11 @@ type Props = {
   held?: boolean;
   /** もう一度呼ぶ（#58） */
   onRecall?: (order: Order) => void;
+  /** 予約のお渡しの目安を直す（#70） */
+  onEditEta?: (order: Order) => void;
 };
 
-export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, onEditNote, held = false, onRecall }: Props) {
+export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, onEditNote, held = false, onRecall, onEditEta }: Props) {
   const finished = order.status === 'done' || order.status === 'cancelled';
   const mark = dayMark(order.day, today);
   const [main, ...rest] = availableActions(order.status);
@@ -63,6 +66,17 @@ export function OrderCard({ order, today, now, onAction, onTogglePayment, onQr, 
           </li>
         ))}
       </ul>
+      {/* 予約のお渡しの目安（#70）：調理中・できあがりの予約だけ。お客様の画面にも出る */}
+      {order.reserved && !finished && (
+        <p class={styles.eta}>
+          <span>お渡しの目安：{order.etaAt ? `${formatEta(order.etaAt.getTime(), new Date(now))}ごろ` : '未定'}</span>
+          {onEditEta && (
+            <button type="button" class={styles.etaButton} onClick={() => onEditEta(order)}>
+              目安を直す
+            </button>
+          )}
+        </p>
+      )}
       {/* メモ：調理で気をつけることを、見落とさないように目立たせる（色だけでなく、「メモ」の文字でも示す） */}
       {order.note && (
         <p class={styles.note}>

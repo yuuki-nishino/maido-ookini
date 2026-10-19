@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Button } from '../../components/Button';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Loading } from '../../components/Feedback';
-import { changeNote, changePayment, recallOrder, transitionOrder, watchOrdersOfDay } from '../../lib/data/orders';
+import { changeEta, changeNote, changePayment, recallOrder, transitionOrder, watchOrdersOfDay } from '../../lib/data/orders';
 import type { Order } from '../../lib/data/types';
 import { toDay } from '../../lib/domain/day';
 import { isHoldable } from '../../lib/domain/orderHold';
@@ -18,6 +18,7 @@ import { activeOrders, activeOrdersError } from '../../state/orders';
 import { showToast } from '../../state/toast';
 import { OrderCard } from './OrderCard';
 import styles from './KitchenPage.module.css';
+import { EtaDialog } from './EtaDialog';
 import { NoteDialog } from './NoteDialog';
 import { QrDialog } from './QrDialog';
 
@@ -45,6 +46,7 @@ export function KitchenPage({ eventId, uid }: { eventId: string; uid: string }) 
   const [cancelling, setCancelling] = useState<{ id: string; number: number } | null>(null);
   const [qrOrder, setQrOrder] = useState<Order | null>(null);
   const [noteOrder, setNoteOrder] = useState<Order | null>(null);
+  const [etaOrder, setEtaOrder] = useState<Order | null>(null);
   // 取り消し・取り消しを戻すで、在庫を戻す・減らすため（#68）。読み込めていなければ、在庫は変えない
   const menu = useMenu(eventId).items ?? undefined;
 
@@ -104,6 +106,7 @@ export function KitchenPage({ eventId, uid }: { eventId: string; uid: string }) 
       onEditNote={setNoteOrder}
       held={held.some((h) => h.orderId === o.id)}
       onRecall={recall}
+      onEditEta={setEtaOrder}
     />
   );
 
@@ -204,6 +207,16 @@ export function KitchenPage({ eventId, uid }: { eventId: string; uid: string }) 
       </ConfirmDialog>
 
       <QrDialog eventId={eventId} order={qrOrder} onClose={() => setQrOrder(null)} />
+
+      <EtaDialog
+        order={etaOrder}
+        onClose={() => setEtaOrder(null)}
+        onSave={(orderId, etaAt) => {
+          const o = etaOrder;
+          setEtaOrder(null);
+          if (o) report(changeEta(eventId, orderId, etaAt, uid), o.number); // 待たずに閉じる。拒否されたときだけ知らせる
+        }}
+      />
 
       <NoteDialog
         order={noteOrder}
