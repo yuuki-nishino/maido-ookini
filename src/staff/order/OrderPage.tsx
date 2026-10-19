@@ -30,6 +30,7 @@ import { currentUser } from '../../state/auth';
 import { closeConfirm, confirmState, startConfirm } from '../../state/confirm';
 import { useMenu } from '../../state/menu';
 import styles from './OrderPage.module.css';
+import { StockShortDialog } from './StockShortDialog';
 
 // お金のボタン（#61）：押すたびに、お預りに足す。1行目はお札（「ちょうど」と並べる）、2行目は硬貨
 const BILLS = [1000, 5000, 10000] as const;
@@ -92,21 +93,20 @@ export function OrderPage({ eventId }: { eventId: string }) {
 
       <Options />
 
-      {confirmState.value.kind === 'idle' && confirmState.value.notice !== null && (
+      {/* 在庫が足りない（#69）：画面の中央のダイアログで、予約にするか、数を減らすかを選ぶ */}
+      <StockShortDialog
+        shortages={confirmState.value.kind === 'idle' && confirmState.value.notice === 'stock' ? (confirmState.value.shortages ?? []) : null}
+        onReserve={() => uid && startConfirm(eventId, uid, true)}
+        onReduce={closeConfirm}
+      />
+
+      {confirmState.value.kind === 'idle' && confirmState.value.notice !== null && confirmState.value.notice !== 'stock' && (
         <p class={styles.voidedNotice} role="status">
           {confirmState.value.notice === 'voided'
             ? '前の注文は、やめた扱いにしました（登録されていません）。カートは、そのまま残っています'
-            : confirmState.value.notice === 'stock'
-              ? `在庫が足りないため、まだ確定していません。${(confirmState.value.shortages ?? []).map((s) => `${s.name}の残りが ${s.stock} です（注文は ${s.qty}）`).join('。')}。足りない分を予約として確定するか、数を減らしてください`
-              : 'このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません'}
-          {/* 予約として確定する（#69）：同じカートで、足りない分を予約にして確定し直す */}
-          {confirmState.value.notice === 'stock' && (
-            <button type="button" class={styles.noticeButton} onClick={() => uid && startConfirm(eventId, uid, true)}>
-              予約として確定する
-            </button>
-          )}
+            : 'このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません'}
           <button type="button" class={styles.noticeButton} onClick={closeConfirm}>
-            {confirmState.value.notice === 'stock' ? '数を減らす' : '閉じる'}
+            閉じる
           </button>
         </p>
       )}
