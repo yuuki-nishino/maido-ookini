@@ -81,7 +81,7 @@ describe('watchOrder（お客様）', () => {
     const snap = await waitFor(() => w.seen.find((s) => s.kind === 'doc' && s.order));
     w.unsub();
     const order = snap.kind === 'doc' ? snap.order : null;
-    expect(Object.keys(order!).sort()).toEqual(['calls', 'items', 'number', 'status', 'total']);
+    expect(Object.keys(order!).sort()).toEqual(['calls', 'items', 'number', 'reserved', 'status', 'total']);
     expect(JSON.stringify(snap)).not.toMatch(/paypay|辛さ抜き|staff-uid/);
   });
 

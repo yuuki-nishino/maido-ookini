@@ -90,10 +90,10 @@ async function confirmOrder(ctx: ConfirmContext): Promise<Order> {
     const counter = await tx.get(counterRef);
     const stocks = await readMenuStocks(tx, ctx.draft.items);   // 在庫（#68・ADR-0008）：注文の商品の menu を読む
     const shortages = findShortages(ctx.draft.items, stocks);
-    if (shortages.length > 0) throw new StockShortError(shortages); // 足りなければ、何も書かずに止める
+    if (shortages.length > 0 && !ctx.draft.reserve) throw new StockShortError(shortages); // 足りなければ止める（予約を許すなら続ける。#69）
     const number = (counter.exists() ? counter.data().n : 0) + 1;
     tx.set(counterRef, { n: number });                          // 初回は n=1 の作成、2回目以降は +1 の更新
-    decrementStocks(tx, ctx.draft.items, stocks);               // 在庫を使う商品の残りを減らす（その行に stock: true）
+    decrementStocks(tx, ctx.draft.items, stocks);               // 在庫を使う商品の残りを減らす（その行に stock: true。予約の分は reserved）
     tx.set(orderRef, buildNewOrder(ctx, number));               // qr なら preparing、なければ done
     return /* 作成する注文 */;
   });
@@ -101,6 +101,7 @@ async function confirmOrder(ctx: ConfirmContext): Promise<Order> {
 ```
 - **同時の確定**（#13 で、Emulator の並行テストで分かった）：2台が、同じ日のカウンターを同時に進めると、サーバーは、後のコミットを「やり直し（`aborted`）」ではなく、**ルールの拒否（`permission-denied`）**として返す（ルールは、コミットの時点のカウンターで評価されるため、`n == number - 1` が成り立たない）。SDK の自動のやり直しは働かないため、`confirmOrder` は、`permission` のときに、**墓標が無いことを確かめてから、同じ `orderId` で最大5回やり直す**（少し待つ時間をずらす。同じ `orderId` なので二重にならない）。墓標があれば、やり直さず `permission` を返す（下の「墓標がある」の経路）。番号の重複は、ルールが防いでいるため、起こらない
 - **在庫**（#68、ADR-0008）：注文の商品の `menu` を、トランザクションで読む（読みは、書く前にすべて行う）。在庫を使う商品で、注文の数が残りを超えれば、**何も書かずに止める**（`StockShortError`、code: `stock`。どの商品が・残りいくつ・注文いくつ）。注文は作られていないので、確かめ直さずに `idle` に戻し（`stockShort` のイベント。`pending` は消す）、注文画面に「在庫が足りないため、確定しませんでした。焼きそばの残りが 2 です（注文は 3）」と出す。カートは残す。足りれば、残りを減らし、その行に `stock: true` を付ける。2台が同時に最後の在庫を確定しても、トランザクションが片方だけを通す（もう片方は、読み直した残りで `stock`）。メニューから消えた商品は、在庫を見ない
+- **予約注文**（#69、ADR-0009）：「在庫が足りない」の知らせの「予約として確定する」で、同じカートを、`draft.reserve = true`・新しい `orderId` で確定し直す（`startConfirm(eventId, uid, true)`）。このときは、足りなくても止めず、在庫を減らし（マイナスになる）、足りなかった分を、その行の `reserved` にし、注文に `reserved: true` を付ける。足りていれば、予約にしない（`reserved` を書かない）
 - 確定できたときは、トランザクションで決まった番号から、注文を組み立てて返す（読み直さない。確定の直後に通信が切れても、成功を失敗と取り違えないため）
 - 8秒で応答がなければ、`failed`（`Promise.race`）。トランザクションは、キャンセルできないため、**裏で続く**。それでよい（登録されても、`orderId` が同じなので、再試行・確認で見つかる。「やめる」なら、墓標との競合で、ルールが片方だけを通す）
 - 墓標がある `orderId` で、遅れて確定のコミットが届くと、ルールが拒否する（`permission-denied`）。画面が `submitting` / `failed` のときに、この拒否を受けたら、**墓標の有無を `getDocFromServer` で確かめる**。墓標があれば「やめた注文です」として `pending` を削除し、`idle` に戻る。なければ、§6 の「権限」の文言を出す（メンバーでない場合）
@@ -169,7 +170,7 @@ async function voidOrFind(ctx): Promise<{ result: 'found'; order: Order } | { re
 | やめた注文 | `permission-denied` で、墓標がある | この注文は、やめた扱いです（「新しい番号で確定し直す」「確定せずに戻る」） |
 | 墓標を確かめられない | `permission-denied` の後の墓標の確認が、失敗する・確定を始めてから8秒を過ぎる | 「送れていません」と同じ扱い（登録されたか分からないため、「もう一度試す」「やめる」で確かめる。レビュー C2） |
 | やめる処理が権限で断られた | `voidOrFind` が `permission-denied` | このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません |
-| 在庫が足りない（#68） | 確定のトランザクションの中で、サーバーの残りが注文の数より少ない（`stock`） | 在庫が足りないため、確定しませんでした。◯◯の残りが N です（注文は M）。数を減らして、もう一度確定してください（`idle` に戻る。カートは残る。注文は作られていない） |
+| 在庫が足りない（#68・#69） | 確定のトランザクションの中で、サーバーの残りが注文の数より少ない（`stock`） | 在庫が足りないため、まだ確定していません。◯◯の残りが N です（注文は M）。足りない分を予約として確定するか、数を減らしてください（`idle` に戻る。カートは残る。注文は作られていない。「予約として確定する」「数を減らす」） |
 | 競合・内部エラー | `aborted` など | 送れていません。もう一度試してください |
 
 ## 7. 想定する状況の確認表

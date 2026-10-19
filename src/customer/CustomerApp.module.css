@@ -46,6 +46,12 @@
   --status-bd: var(--status-void-fg);
 }
 
+.reservedNote {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
 .recall {
   margin: 0;
   padding: var(--sp-2) var(--sp-4);

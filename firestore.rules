@@ -157,8 +157,10 @@ service cloud.firestore {
           && !existsAfter(subPath(eventId, 'voids', orderId))
           && request.resource.data.keys().hasOnly(
                ['number', 'day', 'items', 'total', 'payment', 'status', 'cancelledFrom', 'qr', 'note',
-                'createdAt', 'readyAt', 'doneAt', 'cancelledAt', 'createdBy', 'updatedBy', 'updatedAt'])
+                'createdAt', 'readyAt', 'doneAt', 'cancelledAt', 'createdBy', 'updatedBy', 'updatedAt', 'reserved'])
           && validNote(request.resource.data)
+          // 予約を含む注文（#69）。任意。作成のあとは変えない（更新の affectedKeys に無い）
+          && request.resource.data.get('reserved', false) is bool
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
           && request.resource.data.createdAt == request.time

@@ -4,6 +4,7 @@ import {
   chimeButton,
   shouldRecall,
   showLeaveNote,
+  showReservedNote,
   showRecallNotice,
   nextPendingAlert,
   CUSTOMER_STATUS_TEXT,
@@ -19,7 +20,7 @@ import {
   type CustomerOrder,
 } from '../../src/lib/domain/customerView';
 
-const order: CustomerOrder = { number: 7, status: 'preparing', items: [{ name: '焼きそば', price: 500, qty: 2 }], total: 1000, calls: 0 };
+const order: CustomerOrder = { number: 7, status: 'preparing', items: [{ name: '焼きそば', price: 500, qty: 2 }], total: 1000, calls: 0, reserved: false };
 
 describe('customerView', () => {
   it('まだ何も届いていない → loading。8秒続いたら slow（「通信が不安定です」を添える）', () => {
@@ -53,7 +54,7 @@ describe('customerView', () => {
 
   it('お客様に渡す注文の型には、支払い方法・メモ・スタッフの情報が無い', () => {
     const keys = Object.keys(order).sort();
-    expect(keys).toEqual(['calls', 'items', 'number', 'status', 'total']);
+    expect(keys).toEqual(['calls', 'items', 'number', 'reserved', 'status', 'total']);
   });
 });
 
@@ -139,6 +140,14 @@ describe('nextPendingAlert（まだ鳴らせていない知らせ。#57・#58）
     expect(nextPendingAlert(1, pt('ready'), pt('done'), 2)).toBeNull();
     expect(nextPendingAlert(1, pt('ready'), pt('preparing'), 2)).toBeNull();
     expect(nextPendingAlert(1, pt('ready'), pt('cancelled'), 2)).toBeNull();
+  });
+});
+
+describe('showReservedNote（予約の案内。#69）', () => {
+  it('予約を含み、調理中のときだけ出す', () => {
+    expect(showReservedNote({ status: 'preparing', reserved: true })).toBe(true);
+    expect(showReservedNote({ status: 'preparing', reserved: false })).toBe(false);
+    for (const status of ['ready', 'done', 'cancelled'] as const) expect(showReservedNote({ status, reserved: true })).toBe(false);
   });
 });
 

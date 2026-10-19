@@ -18,6 +18,7 @@ import {
   shouldKeepAwake,
   shouldRecall,
   showLeaveNote,
+  showReservedNote,
   showRecallNotice,
   type AlertPoint,
   startWaitTicker,
@@ -196,6 +197,8 @@ function Active({ order, fromCache, updatedAt, chime, recallNotice, onArm }: Act
         </h2>
         <span class={styles.badge}>{text.badge}</span>
         <p class={styles.message}>{text.message}</p>
+        {/* 予約を含む（#69）：待ちが長くなることを伝える */}
+        {showReservedNote(order) && <p class={styles.reservedNote}>在庫を用意しています。用意でき次第、調理します</p>}
         {/* お店の「もう一度呼ぶ」（#58）。音を鳴らせないお客様にも、文字で分かるように */}
         {recallNotice && (
           <p class={styles.recall} role="alert">

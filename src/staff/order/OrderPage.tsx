@@ -7,7 +7,8 @@ import { TextField } from '../../components/TextField';
 import type { MenuItem } from '../../lib/data/types';
 import { normalizeNote, NOTE_MAX } from '../../lib/domain/note';
 import { LOW_STOCK } from '../../lib/domain/menu';
-import { addTendered, calcChange, formatYen, isSoldOut, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
+import { addTendered, calcChange, formatYen, lineNotice, parseTendered, QTY_MAX, TENDERED_MAX, type CartLine } from '../../lib/domain/order';
+import { reservationsOf } from '../../lib/domain/stock';
 import {
   addItemToCart,
   applyLineCurrentPrice,
@@ -96,10 +97,16 @@ export function OrderPage({ eventId }: { eventId: string }) {
           {confirmState.value.notice === 'voided'
             ? '前の注文は、やめた扱いにしました（登録されていません）。カートは、そのまま残っています'
             : confirmState.value.notice === 'stock'
-              ? `在庫が足りないため、確定しませんでした。${(confirmState.value.shortages ?? []).map((s) => `${s.name}の残りが ${s.stock} です（注文は ${s.qty}）`).join('。')}。数を減らして、もう一度確定してください`
+              ? `在庫が足りないため、まだ確定していません。${(confirmState.value.shortages ?? []).map((s) => `${s.name}の残りが ${s.stock} です（注文は ${s.qty}）`).join('。')}。足りない分を予約として確定するか、数を減らしてください`
               : 'このイベントでは、いま注文を登録できません（メンバーでなくなったか、イベントの削除中です）。前の注文は、登録されていません'}
+          {/* 予約として確定する（#69）：同じカートで、足りない分を予約にして確定し直す */}
+          {confirmState.value.notice === 'stock' && (
+            <button type="button" class={styles.noticeButton} onClick={() => uid && startConfirm(eventId, uid, true)}>
+              予約として確定する
+            </button>
+          )}
           <button type="button" class={styles.noticeButton} onClick={closeConfirm}>
-            閉じる
+            {confirmState.value.notice === 'stock' ? '数を減らす' : '閉じる'}
           </button>
         </p>
       )}
@@ -111,21 +118,26 @@ export function OrderPage({ eventId }: { eventId: string }) {
 }
 
 function MenuButton({ item, qty, onAdd }: { item: MenuItem; qty: number; onAdd: () => void }) {
-  // 売り切れ：手の「売り切れ」、または、在庫の残りが0（#67。補充すれば、自動で戻る）
-  const soldOut = isSoldOut(item);
+  // 売り切れは、手の切り替えだけ。在庫の残りが0以下でも、予約として受ける（#69。予約の数を見て、止めるなら手で売り切れにする）
+  const soldOut = item.soldOut;
   const stock = !soldOut && item.stock !== null ? item.stock : null;
+  const reservations = reservationsOf(stock);
   return (
     <button
       type="button"
       class={`${styles.menuItem} ${qty > 0 ? styles.inCart : ''}`}
       disabled={soldOut}
       onClick={onAdd}
-      aria-label={`${item.name} ${formatYen(item.price)}${item.cook ? '' : '（調理なし）'}${soldOut ? '（売り切れ）' : `${stock !== null ? `（残り${stock}）` : ''}${qty > 0 ? `（カートに${qty}）` : ''}`}`}
+      aria-label={`${item.name} ${formatYen(item.price)}${item.cook ? '' : '（調理なし）'}${soldOut ? '（売り切れ）' : `${stock !== null ? (stock > 0 ? `（残り${stock}）` : `（残り0・予約で受け付け${reservations > 0 ? `・予約${reservations}` : ''}）`) : ''}${qty > 0 ? `（カートに${qty}）` : ''}`}`}
     >
       <span class={styles.menuName}>{item.name}</span>
       <span class={styles.menuPrice}>{formatYen(item.price)}</span>
       {soldOut && <span class={styles.soldOutLabel}>売り切れ</span>}
-      {stock !== null && <span class={`${styles.stockLabel} ${stock <= LOW_STOCK ? styles.stockLow : ''}`}>残り {stock}</span>}
+      {stock !== null && (
+        <span class={`${styles.stockLabel} ${stock <= LOW_STOCK ? styles.stockLow : ''}`}>
+          {stock > 0 ? `残り ${stock}` : `予約で受付${reservations > 0 ? `（予約 ${reservations}）` : ''}`}
+        </span>
+      )}
       {!item.cook && <span class={styles.noCookLabel}>調理なし</span>}
       {qty > 0 && (
         <span class={styles.qtyBadge} aria-hidden="true">
@@ -197,7 +209,7 @@ function Cart({ lines, menu }: { lines: CartLine[]; menu: MenuItem[] }) {
                   </p>
                 )}
                 {n.soldOut && <p class={styles.notice}>売り切れになりました（このまま確定できます）</p>}
-                {n.stockShort !== null && <p class={styles.notice}>残りは {n.stockShort} です（数を減らしてください）</p>}
+                {n.stockShort !== null && <p class={styles.notice}>残りは {n.stockShort} です。超える分は、予約になります</p>}
                 {n.deleted && <p class={styles.notice}>メニューから削除されました（このまま確定できます）</p>}
               </li>
             );

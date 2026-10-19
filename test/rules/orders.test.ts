@@ -443,6 +443,20 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     await assertSucceeds(restore.commit());
   });
 
+  it('予約を含む注文（reserved: true。#69）を作れる。reserved が真偽値でなければ拒否。作成のあとは変えられない', async () => {
+    const db = as(env, ALICE);
+    const ok = writeBatch(db);
+    ok.set(doc(db, 'events/e1/counters', DAY), { n: 2 });
+    ok.set(doc(db, 'events/e1/orders/o2'), newOrder(ALICE, 2, true, { reserved: true, items: [{ ...orderItems[0], stock: true, reserved: 1 }] }));
+    ok.update(doc(db, 'events/e1/menu/y'), { stock: increment(-6) });
+    await assertSucceeds(ok.commit());
+    const bad = writeBatch(db);
+    bad.set(doc(db, 'events/e1/counters', DAY), { n: 3 });
+    bad.set(doc(db, 'events/e1/orders/o3'), newOrder(ALICE, 3, true, { reserved: 'yes' }));
+    await assertFails(bad.commit());
+    await assertFails(updateDoc(doc(db, 'events/e1/orders/o2'), { reserved: false, updatedBy: ALICE, updatedAt: serverTimestamp() }));
+  });
+
   it('メンバーでない人は、在庫を変えられない', async () => {
     await assertFails(updateDoc(doc(as(env, BOB), 'events/e1/menu/y'), { stock: increment(-1) }));
   });

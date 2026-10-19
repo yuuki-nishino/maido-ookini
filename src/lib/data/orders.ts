@@ -20,7 +20,7 @@ import {
 import type { ConfirmContext } from '../domain/confirmFlow';
 import { NOTE_MAX } from '../domain/note';
 import { sortOrders, transitionPatch, type OrderAction, type TimeValue } from '../domain/orderStatus';
-import { decrementsStock, findShortages, stockAdjustments } from '../domain/stock';
+import { decrementsStock, findShortages, reservedQty, stockAdjustments } from '../domain/stock';
 import { db } from '../firebase/staff';
 import { AppError, StockShortError, toAppError } from './errors';
 import { withTimeout } from './online';
@@ -48,12 +48,14 @@ export function toOrder(snap: DocumentSnapshot): Order {
       qty: i.qty,
       ...(i.cook === false ? { cook: false } : {}),
       ...(i.stock === true ? { stock: true } : {}),
+      ...(typeof i.reserved === 'number' && i.reserved > 0 ? { reserved: i.reserved } : {}),
     })),
     total: d.total,
     payment: d.payment,
     note: typeof d.note === 'string' ? d.note : '', // 無い注文（#40 より前）は、空
     status: d.status,
     calls: typeof d.calls === 'number' ? d.calls : 0, // 無い注文（#58 より前・まだ呼んでいない）は 0
+    reserved: d.reserved === true, // 予約を含む（#69）
     cancelledFrom: d.cancelledFrom ?? null,
     qr: d.qr === true,
     createdAt: toDate(d.createdAt),
@@ -114,9 +116,14 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
         if (m.exists()) stocks.set(l.menuId, typeof m.get('stock') === 'number' ? (m.get('stock') as number) : null);
       }
       const shortages = findShortages(baseLines, stocks);
-      if (shortages.length > 0) throw new StockShortError(shortages); // 何も書かずに止める（注文は作られない）
+      // 足りなければ、何も書かずに止める（注文は作られない）。予約を許すとき（#69）は、足りない分を予約にして続ける
+      if (shortages.length > 0 && !ctx.draft.reserve) throw new StockShortError(shortages);
       const number = (counter.exists() ? (counter.get('n') as number) : 0) + 1;
-      lines = baseLines.map((l) => (decrementsStock(l.menuId, stocks) ? { ...l, stock: true } : l));
+      lines = baseLines.map((l) => {
+        if (!decrementsStock(l.menuId, stocks)) return l;
+        const reserved = reservedQty(l.qty, stocks.get(l.menuId));
+        return reserved > 0 ? { ...l, stock: true, reserved } : { ...l, stock: true };
+      });
       for (const l of lines) {
         if (l.stock) tx.update(doc(db, 'events', eventId, 'menu', l.menuId), { stock: (stocks.get(l.menuId) as number) - l.qty });
       }
@@ -138,6 +145,7 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
         createdBy: uid,
         updatedBy: uid,
         updatedAt: serverTimestamp(),
+        ...(lines.some((l) => l.reserved) ? { reserved: true } : {}), // 予約を含む（#69。含まなければ、書かない）
       });
       return { existing: null, number };
     });
@@ -153,6 +161,7 @@ async function confirmOnce(eventId: string, ctx: ConfirmContext, uid: string): P
       note,
       status: qr ? 'preparing' : 'done',
       calls: 0,
+      reserved: lines.some((l) => l.reserved),
       cancelledFrom: null,
       qr,
       createdAt: null,

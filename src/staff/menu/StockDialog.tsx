@@ -6,6 +6,7 @@ import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
 import type { MenuItem } from '../../lib/data/types';
 import { parseStock, STOCK_ERROR } from '../../lib/domain/menu';
+import { reservationsOf } from '../../lib/domain/stock';
 import styles from './StockDialog.module.css';
 
 type Props = {
@@ -42,7 +43,19 @@ export function StockDialog({ item, onAdd, onSet, onClose }: Props) {
           <h2 id="stock-dialog-title" class={styles.title}>
             {item.name}の在庫
           </h2>
-          <p class={styles.now}>{managed ? <>いまの残り：<strong>{item.stock}</strong></> : '在庫を使っていません（注文で数が減らない・売り切れは手で切り替える）'}</p>
+          <p class={styles.now}>
+            {!managed ? (
+              '在庫を使っていません（注文で数が減らない・売り切れは手で切り替える）'
+            ) : (item.stock ?? 0) >= 0 ? (
+              <>
+                いまの残り：<strong>{item.stock}</strong>
+              </>
+            ) : (
+              <>
+                いまの残り：<strong>0</strong>・予約：<strong>{reservationsOf(item.stock)}</strong>（補充すると、予約の分から埋まります。予約の受け付けを止めるときは、「売り切れ」にします）
+              </>
+            )}
+          </p>
           <TextField
             label={managed ? '数' : 'いまの残り'}
             inputMode="numeric"
