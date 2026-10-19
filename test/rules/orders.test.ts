@@ -457,6 +457,20 @@ describe('在庫（#68）：確定で減らし、取り消しで戻す', () => {
     await assertFails(updateDoc(doc(db, 'events/e1/orders/o2'), { reserved: false, updatedBy: ALICE, updatedAt: serverTimestamp() }));
   });
 
+  it('在庫が範囲（-99,999）を超えるバッチは、取り消しごと拒否される', async () => {
+    const db = as(env, ALICE);
+    const b = writeBatch(db);
+    b.update(doc(db, 'events/e1/orders/o1'), {
+      status: 'cancelled',
+      cancelledFrom: 'preparing',
+      cancelledAt: serverTimestamp(),
+      updatedBy: ALICE,
+      updatedAt: serverTimestamp(),
+    });
+    b.update(doc(db, 'events/e1/menu/y'), { stock: increment(-100010) });
+    await assertFails(b.commit());
+  });
+
   it('メンバーでない人は、在庫を変えられない', async () => {
     await assertFails(updateDoc(doc(as(env, BOB), 'events/e1/menu/y'), { stock: increment(-1) }));
   });

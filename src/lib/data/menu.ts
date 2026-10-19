@@ -114,6 +114,8 @@ export function updateMenuItem(eventId: string, id: string, patch: Partial<Pick<
 export function addStock(eventId: string, item: MenuItem, n: number): Promise<void> {
   if (item.stock === null) return Promise.reject(validationError('在庫を使っていない商品です'));
   if (!validStock(n) || n === 0) return Promise.reject(validationError(`補充する数は、1〜${STOCK_MAX.toLocaleString('ja-JP')}の整数で入れてください`));
+  // 端末の値で判定する（最終の判定は、ルール）。ほかの端末が「在庫を使わない」にした直後に足すと、使う状態に戻る
+  // （increment は、null に対して n を書く）。まれなので許容する（screens.md §3.8）
   if (item.stock + n > STOCK_MAX) return Promise.reject(validationError(`残りは${STOCK_MAX.toLocaleString('ja-JP')}までです`));
   return write(updateDoc(doc(menuCol(eventId), item.id), { stock: increment(n) }));
 }

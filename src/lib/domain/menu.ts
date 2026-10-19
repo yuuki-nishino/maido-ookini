@@ -42,7 +42,8 @@ export function parseStock(input: string): number | null {
     .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/，/g, ',')
     .trim()
-    .replace(/(個|食|枚|本|杯)$/, '');
+    .replace(/(個|食|枚|本|杯)$/, '')
+    .trim(); // 「20 食」も通す（数字の間の空白は、通さない）
   if (!/^(\d+|\d{1,3}(,\d{3})+)$/.test(text)) return null;
   const n = Number(text.replace(/,/g, ''));
   return Number.isSafeInteger(n) && n <= STOCK_MAX ? n : null;
